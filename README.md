@@ -1,7 +1,18 @@
 # TesorerIA
 
-El candado antifraude de tus pagos: **la IA pide, el contrato decide, el director firma.**
-Corre en Stellar testnet con activos de prueba. La consulta al SAT y la lista 69-B son simuladas.
+El candado antifraude de tus pagos: **la voz sugiere, el contrato manda, la factura respalda.**
+Tesorera digital por voz para PyMEs sobre **Stellar + Soroban** con validación de facturas SAT (CFDI), Path Payments atómicos (`MXNe → USDC`) y nómina en lote.
+
+## Qué lanzamos el 27 de noviembre (Ship It: Builder Challenge)
+
+Al cierre del **27 de noviembre de 2026** lanzamos **TesorerIA v1 en producción sobre Stellar**:
+
+1. **Contrato inteligente `TreasuryGuard` en Stellar Mainnet** (hoy activo en Testnet: [`CBTYXTKM3MQ47G4GG6U6YCDU5WHVPYLCSRC4NZY6SWWSNRVUJF4MDAF2`](https://stellar.expert/explorer/testnet/contract/CBTYXTKM3MQ47G4GG6U6YCDU5WHVPYLCSRC4NZY6SWWSNRVUJF4MDAF2)) con reglas on-chain: lista blanca de proveedores, tope por transacción, límite diario global, umbral de firma humana (>50,000), candado anti-doble pago por folio fiscal (UUID del SAT) y nuevas funciones de gobierno/emergencia probadas con tests unitarios en Rust.
+2. **Aplicación web pública en vivo** ([`coronahernandezs931--tesoreria.modal.run`](https://coronahernandezs931--tesoreria.modal.run)): tablero de tesorería con verificación directa de eventos Soroban RPC, soporte de memo personalizado en transacciones, validación CFDI/69-B, aprobación móvil por QR y **Reto del Jurado (`/reto`)**.
+3. **Agente de voz Tesa (Retell AI)** + **3 rieles nativos de Stellar** (Soroban, Path Payments DEX y nómina en lote) + estándares **SEP-1** (`/.well-known/stellar.toml`) y **SEP-2** (`/federation`).
+4. **Demo de lanzamiento (60–90 s)** mostrando todo el flujo verificado en `stellar.expert`.
+
+*(Nota de transparencia: en la demo de Testnet los activos MXNe/USDC son de prueba y la consulta al SAT/lista 69-B es simulada.)*
 
 ## Dónde está cada cosa
 
