@@ -1,0 +1,196 @@
+{
+  "network": "testnet",
+  "horizon": "https://horizon-testnet.stellar.org",
+  "soroban_rpc": "https://soroban-testnet.stellar.org",
+  "company": {
+    "name": "Grupo Industrial Tlahuica",
+    "short": "Tlahuica",
+    "city": "Cuernavaca, Morelos",
+    "rfc": "GIT190514MX7"
+  },
+  "accounts": {
+    "issuer": "GATJQPN6M6M2CKLC4MMU6BZSG6NT3HX6V7CM3MMDYKPWNMVUGQRT3BSY",
+    "owner": "GAMVCT5EH7C4HLORFN2N2W43VOTQMJIAHEZWYMPOHR5MHZD44TSAR7JK",
+    "agent": "GDVBKFO44NRGJL5P7V47UOWWTZDFKYRE535SAJHGMY44L74RZ7STQRLM",
+    "treasury": "GD5SBS4GORQIRXVZYL66P7TYO7SMMALMQVGCNXHYKJ3YX3NX75KTFB56",
+    "mm": "GAOJBZYVO2B7ECBHYQDT7AJ7HI2EM24DWI34H6WQRCOOJLTUB5JDZCQZ"
+  },
+  "assets": {
+    "MXNe": {
+      "code": "MXNe",
+      "issuer": "GATJQPN6M6M2CKLC4MMU6BZSG6NT3HX6V7CM3MMDYKPWNMVUGQRT3BSY"
+    },
+    "USDC": {
+      "code": "USDC",
+      "issuer": "GATJQPN6M6M2CKLC4MMU6BZSG6NT3HX6V7CM3MMDYKPWNMVUGQRT3BSY"
+    }
+  },
+  "suppliers": [
+    {
+      "key": "logistica",
+      "name": "Logística del Sur",
+      "city": "Cuernavaca",
+      "country": "MX",
+      "currency": "MXNe",
+      "max_per_tx": 100000,
+      "whitelisted": true,
+      "alias": "logistica*tesoreria.mx",
+      "rfc": "LSU150312KJ4",
+      "address": "GC4RM6JW5O53DYXQ5ZGAA6SEL22NKST7CA2FE4F23TD3JQ6455R2HKK4"
+    },
+    {
+      "key": "empaques",
+      "name": "Empaques Jiutepec",
+      "city": "Jiutepec",
+      "country": "MX",
+      "currency": "MXNe",
+      "max_per_tx": 40000,
+      "whitelisted": true,
+      "alias": "empaques*tesoreria.mx",
+      "rfc": "EJI180905TQ1",
+      "address": "GBU254MY5J7DRD4T4LQNUSG3AYQPYF5KIYQG3JCM6WBHTG3IUTA7PB4H"
+    },
+    {
+      "key": "solar",
+      "name": "Energía Solar Morelos",
+      "city": "Temixco",
+      "country": "MX",
+      "currency": "MXNe",
+      "max_per_tx": 150000,
+      "whitelisted": true,
+      "alias": "solar*tesoreria.mx",
+      "rfc": "ESM200117HB8",
+      "address": "GDNBAOY3YFUEP2XGJEGDSVZC4LUF5ACVLU3ZQT3L6QZHIOBVB33ZG3HJ"
+    },
+    {
+      "key": "brazos",
+      "name": "Brazos Bearing Co.",
+      "city": "Houston, TX",
+      "country": "US",
+      "currency": "USDC",
+      "max_per_tx": null,
+      "whitelisted": true,
+      "alias": "brazos*tesoreria.mx",
+      "rfc": "XEXX010101000",
+      "address": "GCPLPULIRD2XEONP62PG2FQSD5XQKGGX4SBGYOHPJEHXK2TZIH2DUSEE"
+    },
+    {
+      "key": "textiles",
+      "name": "Textiles Medellín",
+      "city": "Medellín",
+      "country": "CO",
+      "currency": "USDC",
+      "max_per_tx": null,
+      "whitelisted": true,
+      "alias": "textiles*tesoreria.mx",
+      "rfc": "XEXX010101000",
+      "address": "GDVCMXD5AQ4M5MPEGLZ35S6I6OIUXYDC6BZHMD4Z62ISAQ2WDBHIE7XS"
+    },
+    {
+      "key": "fantasma",
+      "name": "Consultores Fantasma",
+      "city": "Desconocido",
+      "country": "MX",
+      "currency": "MXNe",
+      "max_per_tx": null,
+      "whitelisted": false,
+      "alias": "fantasma*tesoreria.mx",
+      "rfc": "CFA190221R56",
+      "address": "GAUAGXR6O6DR3ITNPOF6KB32GCVWSJY46T3RTV2YDGGHYPEQKPVIE3XI"
+    }
+  ],
+  "employees": [
+    {
+      "key": "ana",
+      "name": "Ana Torres",
+      "role": "Jefa de Producción",
+      "salary": 16400,
+      "address": "GCWEPVZ4SA6L4EBU3TQRHV4HZRJYMCKJOUBWB42EHG3H75UO3DDTYMPU"
+    },
+    {
+      "key": "luis",
+      "name": "Luis Ramírez",
+      "role": "Operador CNC",
+      "salary": 9800,
+      "address": "GAZM7GQRJNTS64XGYTF7N5SHQUET5FC2HQ26FCRP3UKSZDN6S4H5FRSN"
+    },
+    {
+      "key": "maria",
+      "name": "María Domínguez",
+      "role": "Control de Calidad",
+      "salary": 11200,
+      "address": "GD6UYF332A6X2XHI3DU43H2LXPHUUKXT4WO4TIKUMPKZOXGQS3GW266C"
+    },
+    {
+      "key": "jorge",
+      "name": "Jorge Salgado",
+      "role": "Almacén y Logística",
+      "salary": 8900,
+      "address": "GBMT5O43SEVK7OPDTR62MG64DUHYQEKG2OU3HGOMFARUOTRKFGWPHRFY"
+    }
+  ],
+  "invoices": [
+    {
+      "id": "F-2041",
+      "supplier": "logistica",
+      "amount": 18500,
+      "currency": "MXNe",
+      "concept": "Fletes Cuernavaca–CDMX, semana 46",
+      "uuid": "6E5C35AA-A274-4EBE-AA52-79FDC6CD0D4F"
+    },
+    {
+      "id": "F-2042",
+      "supplier": "empaques",
+      "amount": 7240,
+      "currency": "MXNe",
+      "concept": "Cajas corrugadas, lote 118",
+      "uuid": "373CB6B8-F6CB-48E3-B02D-557075CBF891"
+    },
+    {
+      "id": "F-2043",
+      "supplier": "solar",
+      "amount": 86000,
+      "currency": "MXNe",
+      "concept": "Mantenimiento de paneles, planta 2",
+      "uuid": "ED953325-1B78-4CA4-94D3-947B33E10CA7"
+    },
+    {
+      "id": "F-2044",
+      "supplier": "brazos",
+      "amount": 3200,
+      "currency": "USDC",
+      "concept": "Rodamientos industriales SKF",
+      "uuid": "0219B78E-DAFC-43DC-84A9-4914F60BE6F8"
+    },
+    {
+      "id": "F-2045",
+      "supplier": "textiles",
+      "amount": 1150,
+      "currency": "USDC",
+      "concept": "Tela técnica antiflama",
+      "uuid": "512A3626-1F96-49E6-902D-E7EAC4E468D3"
+    }
+  ],
+  "policy": {
+    "daily_limit": 150000,
+    "approval_threshold": 50000
+  },
+  "lista_69b": [
+    "CFA190221R56"
+  ],
+  "change_requests": [
+    {
+      "id": "CR-1",
+      "supplier": "logistica",
+      "new_address": "GBO4RMEN3SMJHRVOTVT2HPSKCGOJWD4MTNXGX3T4XYYFPUIZXT4ZWAAV",
+      "from_email": "pagos.logisticadelsur@gmail.com",
+      "official_email": "pagos@logisticadelsur.mx",
+      "subject": "Actualización de datos bancarios",
+      "account_age_days": 2
+    }
+  ],
+  "contracts": {
+    "mxnb_sac": "CCTXGBFW57Y2YCZ5K22FAK5HRUECEQR47LSPAK7NUTPFQ5JRW7GYRNOI",
+    "treasury_guard": "CBTYXTKM3MQ47G4GG6U6YCDU5WHVPYLCSRC4NZY6SWWSNRVUJF4MDAF2"
+  }
+}

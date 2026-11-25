@@ -1,0 +1,18 @@
+state/wallets.secret.json
+contracts/*/target/
+.venv/
+*.log
+state/store.local.json
+.taste-skill/
+local.log
+video/
+
+# Privado: el repositorio es público
+state/*secret*
+state/retell_*.json
+CONTEXTO_COMPLETO.md
+PITCH_Y_DEMO.md
+PROPUESTAS_MEJORAS.md
+
+# Del editor
+.idea/
