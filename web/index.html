@@ -335,7 +335,7 @@ td:first-child .s{max-width:260px;overflow:hidden;text-overflow:ellipsis}
 
         <!-- fila 2 -->
         <section class="card" aria-labelledby="h-inv">
-          <div class="card-h"><h2 id="h-inv">Por pagar</h2><span class="r num" id="inv-total"></span><label class="btn sm" data-dash style="margin-left:12px">Subir CFDI<input type="file" accept=".xml,text/xml" id="cfdi-file" multiple hidden></label></div>
+          <div class="card-h"><h2 id="h-inv">Por pagar</h2><span class="r num" id="inv-total"></span><input id="pay-memo" data-dash maxlength="28" placeholder="Memo Stellar (opcional)" style="margin-left:10px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font:12px/1.2 var(--mono);width:168px;background:var(--bg);color:var(--ink)"><label class="btn sm" data-dash style="margin-left:8px">Subir CFDI<input type="file" accept=".xml,text/xml" id="cfdi-file" multiple hidden></label></div>
           <div class="tbl-wrap">
             <table>
               <thead><tr><th>Proveedor</th><th>Riel en Stellar</th><th class="num">Monto</th><th class="act">Estado</th></tr></thead>
@@ -632,7 +632,9 @@ document.addEventListener('click', async (e) => {
   if (pay) {
     const id = pay.dataset.pay; pay.disabled = true; pay.textContent = 'Liquidando…';
     const url = id === 'NOM-Q22' ? '/tools/pagar_nomina' : '/tools/pagar_factura';
-    try { const r = await fetch(url, {method: 'POST', headers: H({'Content-Type': 'application/json'}), body: JSON.stringify({args: {factura: id}})}); const j = await r.json(); if (j.mensaje) toast(j.mensaje); }
+    const memo = ($('#pay-memo')?.value || '').trim();
+    const args = {factura: id, ...(memo ? {memo} : {})};
+    try { const r = await fetch(url, {method: 'POST', headers: H({'Content-Type': 'application/json'}), body: JSON.stringify({args})}); const j = await r.json(); if (j.mensaje) toast(j.mensaje); }
     catch (err) { toast('No se pudo enviar el pago'); }
     load();
   }

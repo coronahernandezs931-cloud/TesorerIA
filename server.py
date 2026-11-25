@@ -458,26 +458,27 @@ def pay_domestic(supplier: dict, amount: float, concept: str, inv: dict | None, 
             "mensaje": f"Listo. Pagué {money(amount)} a {supplier['name']} a través del contrato inteligente. Se liquidó en {secs} segundos."}
 
 
-def pay_international(supplier: dict, amount_usdc: float, concept: str, inv: dict | None):
+def pay_international(supplier: dict, amount_usdc: float, concept: str, inv: dict | None, memo: str | None = None):
     t0 = time.time()
     q = quote_usdc(amount_usdc)
     if not q:
         return {"ok": False, "mensaje": "No encontré liquidez en el DEX para esa conversión. No se movió dinero."}
     send_max = f"{q['mxnb'] * 1.005:.7f}"  # 0.5% de tolerancia
+    tx_memo = (str(memo or "").strip() or (inv["id"] if inv else "TesorerIA"))[:28]
     with LOCKS["treasury"]:
         acct = HORIZON.load_account(KP["treasury"].public_key)
         tx = (TransactionBuilder(acct, PASS, base_fee=1000)
               .append_path_payment_strict_receive_op(supplier["address"], MXNe, send_max, USDC, f"{amount_usdc:.7f}", [])
-              .add_text_memo((inv["id"] if inv else "TesorerIA")[:28]).set_timeout(60).build())
+              .add_text_memo(tx_memo).set_timeout(60).build())
         tx.sign(KP["treasury"])
         r = HORIZON.submit_transaction(tx)
     h = r["hash"]
     secs = round(time.time() - t0, 1)
-    base = {"rail": "path_payment", "hash": h, "seconds": secs, "fx": q}
+    base = {"rail": "path_payment", "hash": h, "seconds": secs, "fx": q, "memo": tx_memo}
     if inv:
         save_invoice(inv["id"], status="pagada", paid_at=now_iso(), **base)
     log("paid", f"Pagado a {supplier['name']} ({supplier['country']})", amount=amount_usdc, currency="USDC", hash=h,
-        rail="path_payment", seconds=secs, fx=q, supplier=supplier["key"], invoice=inv["id"] if inv else None)
+        rail="path_payment", seconds=secs, fx=q, memo=tx_memo, supplier=supplier["key"], invoice=inv["id"] if inv else None)
     return {"ok": True, **base, "explorer": f"{EXPLORER}/tx/{h}",
             "mensaje": (f"Listo. {supplier['name']} recibió exactamente {money(amount_usdc, 'USDC')}. De nuestra tesorería salieron "
                         f"{money(q['mxnb'])} a un tipo de cambio de {q['rate']:.2f} pesos por dólar, convertidos en el DEX de Stellar "
@@ -784,7 +785,7 @@ def t_listar(a, role):
     return {"facturas": out}
 
 
-def _pay_invoice(inv: dict, role: str):
+def _pay_invoice(inv: dict, role: str, memo: str | None = None):
     s = SUPPLIERS[inv["supplier"]]
     if role != "director":
         return guest_request(s, inv["amount"], inv["currency"], f"pagar la factura {inv['id']} de {s['name']}")
@@ -810,7 +811,7 @@ def _pay_invoice(inv: dict, role: str):
         store.put("invoices", cur)
     try:
         if inv["currency"] == "USDC":
-            return pay_international(s, inv["amount"], inv["concept"], inv)
+            return pay_international(s, inv["amount"], inv["concept"], inv, memo=memo)
         return pay_domestic(s, inv["amount"], inv["concept"], inv)
     finally:
         if invoices()[inv["id"]]["status"] == "procesando":
@@ -832,7 +833,8 @@ def t_pagar_factura(a, role):
         else:
             pregunta = "¿De qué proveedor es, o qué número de factura pago?"
         return {"ok": False, "requiere_factura": True, "mensaje": f"No encontré esa factura, así que no pagué nada. {pregunta}"}
-    return _pay_invoice(inv, role)
+    memo = str(a.get("memo") or "").strip() or None
+    return _pay_invoice(inv, role, memo=memo)
 
 
 def _cuenta_nueva(a, role):
@@ -967,10 +969,11 @@ def t_nomina(a, role):
             return {"ok": False, "mensaje": "La nómina de esta quincena ya fue dispersada.", "hash": pr.get("hash")}
         store.put("payroll", {"status": "procesando"})
     t0 = time.time()
+    tx_memo = (str(a.get("memo") or "").strip() or "Nomina quincena 22")[:28]
     try:
         with LOCKS["treasury"]:
             acct = HORIZON.load_account(KP["treasury"].public_key)
-            tb = TransactionBuilder(acct, PASS, base_fee=1000).add_text_memo("Nomina quincena 22").set_timeout(60)
+            tb = TransactionBuilder(acct, PASS, base_fee=1000).add_text_memo(tx_memo).set_timeout(60)
             for e in EMPLOYEES:
                 tb.append_payment_op(e["address"], MXNe, f"{e['salary']:.2f}")
             tx = tb.build()
@@ -980,9 +983,9 @@ def t_nomina(a, role):
         store.put("payroll", {"status": "pendiente"})
         raise
     secs = round(time.time() - t0, 1)
-    store.put("payroll", {"status": "pagada", "hash": r["hash"], "total": total, "seconds": secs, "paid_at": now_iso()})
-    log("payroll", f"Nómina dispersada a {len(EMPLOYEES)} empleados", amount=total, currency="MXNe", hash=r["hash"], rail="batch", seconds=secs)
-    return {"ok": True, "hash": r["hash"], "seconds": secs,
+    store.put("payroll", {"status": "pagada", "hash": r["hash"], "total": total, "seconds": secs, "memo": tx_memo, "paid_at": now_iso()})
+    log("payroll", f"Nómina dispersada a {len(EMPLOYEES)} empleados", amount=total, currency="MXNe", hash=r["hash"], rail="batch", seconds=secs, memo=tx_memo)
+    return {"ok": True, "hash": r["hash"], "seconds": secs, "memo": tx_memo, "explorer": f"{EXPLORER}/tx/{r['hash']}",
             "mensaje": f"Nómina dispersada: {len(EMPLOYEES)} empleados, {money(total)} en una sola transacción atómica. Tardó {secs} segundos."}
 
 
