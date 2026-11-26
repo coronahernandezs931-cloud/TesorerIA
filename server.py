@@ -241,6 +241,9 @@ CONTRACT_ERRORS = {
     11: ("EmptyBatch", "el lote de dispersión no contiene partidas válidas"),
     12: ("ReservedFundsLocked", "esos fondos están comprometidos para cubrir pagos pendientes de firma"),
     13: ("TimelockActive", "el plazo programado o ventana de espera aún sigue activo en el ledger"),
+    14: ("InvalidBasisPoints", "el porcentaje en puntos base está fuera del rango permitido por la política fiscal"),
+    15: ("InstallmentCompleted", "el plan de parcialidades ya fue liquidado en su totalidad o se encuentra inactivo"),
+    16: ("CreditExceedsInvoice", "la nota de crédito de egreso no puede exceder ni igualar el total retenido"),
 }
 
 
@@ -1196,6 +1199,8 @@ def contract_capabilities():
         "domain": "https://tesoreria.lat",
         "capabilities": [
             "request_payment", "approve", "reject", "batch_pay",
+            "pay_with_withholding", "open_installment_plan", "pay_installment",
+            "settle_with_credit_note", "pay_early_discounted", "split_cost_center_pay",
             "pause_vault", "unpause_vault", "withdraw_reserve",
             "schedule_payment", "execute_scheduled", "cancel_scheduled",
             "grant_daily_boost", "propose_admin", "accept_admin",
