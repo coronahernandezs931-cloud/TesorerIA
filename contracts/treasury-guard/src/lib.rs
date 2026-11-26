@@ -58,6 +58,14 @@ pub struct Payment {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct BatchItem {
+    pub supplier: Address,
+    pub amount: i128,
+    pub invoice: String,
+}
+
+#[contracttype]
 pub enum DataKey {
     Config,
     NextId,
@@ -83,6 +91,7 @@ pub enum Error {
     DuplicateInvoice = 8,
     Expired = 9,
     VaultPaused = 10,
+    EmptyBatch = 11,
 }
 
 const PENDING_TTL_SECS: u64 = 3 * DAY_SECS; // un pago retenido caduca a los 3 días
@@ -282,6 +291,58 @@ impl TreasuryGuard {
             execute(&env, &cfg, &mut p);
         }
         p
+    }
+
+    /// Dispersión atómica multi-proveedor / nómina desde la bóveda: todo o nada.
+    /// Valida lista blanca, tope individual, folio único por partida y tope diario acumulado.
+    pub fn batch_pay(env: Env, items: Vec<BatchItem>) -> Vec<Payment> {
+        let cfg = config(&env);
+        cfg.operator.require_auth();
+        require_not_paused(&env);
+        bump(&env);
+
+        if items.is_empty() {
+            panic_with_error!(&env, Error::EmptyBatch);
+        }
+
+        let mut results = Vec::new(&env);
+        for item in items.iter() {
+            if item.amount <= 0 || item.amount > cfg.approval_threshold {
+                panic_with_error!(&env, Error::InvalidAmount);
+            }
+            let s: Supplier = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Supplier(item.supplier.clone()))
+                .unwrap_or_else(|| panic_with_error!(&env, Error::NotWhitelisted));
+            if !s.active {
+                panic_with_error!(&env, Error::NotWhitelisted);
+            }
+            if item.amount > s.max_per_tx {
+                panic_with_error!(&env, Error::ExceedsTxLimit);
+            }
+            let inv_key = DataKey::Invoice(item.invoice.clone());
+            if env.storage().persistent().has(&inv_key) {
+                panic_with_error!(&env, Error::DuplicateInvoice);
+            }
+            let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
+            env.storage().persistent().set(&inv_key, &id);
+            env.storage().persistent().extend_ttl(&inv_key, PERSIST_TTL / 2, PERSIST_TTL);
+            env.storage().instance().set(&DataKey::NextId, &(id + 1));
+
+            let mut p = Payment {
+                id,
+                supplier: item.supplier.clone(),
+                amount: item.amount,
+                invoice: item.invoice.clone(),
+                status: Status::Pending,
+                created_at: env.ledger().timestamp(),
+            };
+            execute(&env, &cfg, &mut p);
+            results.push_back(p);
+        }
+        env.events().publish((symbol_short!("batch"),), results.len());
+        results
     }
 
     /// Segundo factor humano: el dueño aprueba un pago retenido.

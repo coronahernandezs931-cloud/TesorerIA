@@ -142,3 +142,28 @@ fn pausa_de_emergencia_bloquea_y_reactiva_pagos() {
     let p = c.guard.request_payment(&c.supplier, &(5_000 * UNIT), &String::from_str(&c.env, "P-01"));
     assert_eq!(p.status, Status::Paid);
 }
+
+#[test]
+fn pago_en_lote_atomico_liquida_multiples_partidas() {
+    let c = setup();
+    let sup2 = Address::generate(&c.env);
+    c.guard.set_supplier(&sup2, &String::from_str(&c.env, "Empaques Jiutepec"), &(40_000 * UNIT));
+
+    let mut lote = Vec::new(&c.env);
+    lote.push_back(BatchItem {
+        supplier: c.supplier.clone(),
+        amount: 12_000 * UNIT,
+        invoice: String::from_str(&c.env, "LOTE-01"),
+    });
+    lote.push_back(BatchItem {
+        supplier: sup2.clone(),
+        amount: 8_500 * UNIT,
+        invoice: String::from_str(&c.env, "LOTE-02"),
+    });
+
+    let pagos = c.guard.batch_pay(&lote);
+    assert_eq!(pagos.len(), 2);
+    assert_eq!(c.token.balance(&c.supplier), 12_000 * UNIT);
+    assert_eq!(c.token.balance(&sup2), 8_500 * UNIT);
+    assert_eq!(c.guard.spent_today(), 20_500 * UNIT);
+}
