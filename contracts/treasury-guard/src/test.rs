@@ -167,3 +167,18 @@ fn pago_en_lote_atomico_liquida_multiples_partidas() {
     assert_eq!(c.token.balance(&sup2), 8_500 * UNIT);
     assert_eq!(c.guard.spent_today(), 20_500 * UNIT);
 }
+
+#[test]
+fn retiro_de_reserva_protege_fondos_comprometidos() {
+    let c = setup();
+    let tesoreria_ext = Address::generate(&c.env);
+    // Retiene 90k de un saldo total de 1,000,000 -> quedan 910,000 libres
+    c.guard.request_payment(&c.supplier, &(90_000 * UNIT), &String::from_str(&c.env, "RES-01"));
+
+    let fallo = c.guard.try_withdraw_reserve(&tesoreria_ext, &(950_000 * UNIT));
+    assert_eq!(fallo, Err(Ok(soroban_sdk::Error::from_contract_error(Error::ReservedFundsLocked as u32))));
+
+    let libre = c.guard.withdraw_reserve(&tesoreria_ext, &(100_000 * UNIT));
+    assert_eq!(libre, 810_000 * UNIT);
+    assert_eq!(c.token.balance(&tesoreria_ext), 100_000 * UNIT);
+}

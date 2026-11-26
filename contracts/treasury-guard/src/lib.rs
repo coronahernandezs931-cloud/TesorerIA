@@ -71,6 +71,7 @@ pub enum DataKey {
     NextId,
     Paused,
     PauseReason,
+    Reserved,
     Supplier(Address),
     Payment(u64),
     Spent(u64),
@@ -92,6 +93,7 @@ pub enum Error {
     Expired = 9,
     VaultPaused = 10,
     EmptyBatch = 11,
+    ReservedFundsLocked = 12,
 }
 
 const PENDING_TTL_SECS: u64 = 3 * DAY_SECS; // un pago retenido caduca a los 3 días
@@ -119,6 +121,15 @@ fn require_not_paused(env: &Env) {
     if env.storage().instance().get(&DataKey::Paused).unwrap_or(false) {
         panic_with_error!(env, Error::VaultPaused);
     }
+}
+
+fn reserved(env: &Env) -> i128 {
+    env.storage().instance().get(&DataKey::Reserved).unwrap_or(0)
+}
+
+fn add_reserved(env: &Env, delta: i128) {
+    let next = (reserved(env) + delta).max(0);
+    env.storage().instance().set(&DataKey::Reserved, &next);
 }
 
 fn save_payment(env: &Env, p: &Payment) {
@@ -240,6 +251,30 @@ impl TreasuryGuard {
             .publish((symbol_short!("unpaused"), cfg.admin), env.ledger().timestamp());
     }
 
+    /// Retiro de reserva de tesorería protegido por solvencia: el director solo puede retirar
+    /// liquidez excedente sin tocar jamás fondos comprometidos en pagos Pending.
+    pub fn withdraw_reserve(env: Env, recipient: Address, amount: i128) -> i128 {
+        let cfg = config(&env);
+        cfg.admin.require_auth();
+        if amount <= 0 {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        let tk = token::Client::new(&env, &cfg.token);
+        let me = env.current_contract_address();
+        let bal = tk.balance(&me);
+        let locked = reserved(&env);
+        let available = bal - locked;
+        if amount > available {
+            panic_with_error!(&env, Error::ReservedFundsLocked);
+        }
+        tk.transfer(&me, &recipient, &amount);
+        bump(&env);
+        let remaining = available - amount;
+        env.events()
+            .publish((symbol_short!("sweep"), recipient), (amount, remaining));
+        remaining
+    }
+
     // ---------- Operación (agente de IA) ----------
 
     /// El agente solicita un pago. Si está bajo el umbral se liquida al instante;
@@ -285,6 +320,7 @@ impl TreasuryGuard {
         };
 
         if amount > cfg.approval_threshold {
+            add_reserved(&env, amount);
             save_payment(&env, &p);
             env.events().publish((symbol_short!("pending"), supplier), (id, amount));
         } else {
@@ -370,6 +406,7 @@ impl TreasuryGuard {
         if !s.active {
             panic_with_error!(&env, Error::NotWhitelisted);
         }
+        add_reserved(&env, -p.amount);
         execute(&env, &cfg, &mut p);
         bump(&env);
         p
@@ -386,6 +423,7 @@ impl TreasuryGuard {
         if p.status != Status::Pending {
             panic_with_error!(&env, Error::NotPending);
         }
+        add_reserved(&env, -p.amount);
         p.status = Status::Rejected;
         save_payment(&env, &p);
         env.storage().persistent().remove(&DataKey::Invoice(p.invoice.clone()));
