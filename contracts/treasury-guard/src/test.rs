@@ -325,3 +325,21 @@ fn plan_de_parcialidades_liquida_anticipo_y_tramos_en_escrow() {
         Err(Ok(soroban_sdk::Error::from_contract_error(Error::InstallmentCompleted as u32)))
     );
 }
+
+#[test]
+fn liquidar_con_nota_de_credito_descuenta_y_libera_reserva() {
+    let c = setup();
+    let p = c.guard.request_payment(&c.supplier, &(80_000 * UNIT), &String::from_str(&c.env, "FAC-80K"));
+    assert_eq!(p.status, Status::Pending);
+
+    let cn = String::from_str(&c.env, "NC-EGRESO-12K");
+    let liquidado = c.guard.settle_with_credit_note(&p.id, &(12_000 * UNIT), &cn);
+    assert_eq!(liquidado.status, Status::Paid);
+    assert_eq!(liquidado.amount, 68_000 * UNIT);
+    assert_eq!(c.token.balance(&c.supplier), 68_000 * UNIT);
+
+    // La misma nota de crédito no puede reutilizarse en otra factura
+    let p2 = c.guard.request_payment(&c.supplier, &(60_000 * UNIT), &String::from_str(&c.env, "FAC-60K"));
+    let dup = c.guard.try_settle_with_credit_note(&p2.id, &(5_000 * UNIT), &cn);
+    assert_eq!(dup, Err(Ok(soroban_sdk::Error::from_contract_error(Error::DuplicateInvoice as u32))));
+}
