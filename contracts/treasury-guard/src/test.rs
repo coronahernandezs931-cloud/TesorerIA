@@ -263,3 +263,34 @@ fn transferencia_de_admin_en_dos_pasos_evita_perdida_de_llave() {
     assert_eq!(aceptado, nuevo_admin);
     assert_eq!(c.guard.get_config().admin, nuevo_admin);
 }
+
+#[test]
+fn pago_con_retencion_fiscal_divide_neto_e_impuesto() {
+    let c = setup();
+    let boveda_sat = Address::generate(&c.env);
+    // Flete por 25,000 MXNe con retención de 4% IVA (400 bps = 1,000 MXNe retenidos, 24,000 MXNe netos)
+    let p = c.guard.pay_with_withholding(
+        &c.supplier,
+        &(25_000 * UNIT),
+        &400,
+        &boveda_sat,
+        &String::from_str(&c.env, "CFDI-RET-01"),
+    );
+    assert_eq!(p.status, Status::Paid);
+    assert_eq!(p.amount, 24_000 * UNIT);
+    assert_eq!(c.token.balance(&c.supplier), 24_000 * UNIT);
+    assert_eq!(c.token.balance(&boveda_sat), 1_000 * UNIT);
+    assert_eq!(c.guard.spent_today(), 25_000 * UNIT);
+
+    let invalido = c.guard.try_pay_with_withholding(
+        &c.supplier,
+        &(10_000 * UNIT),
+        &5_000,
+        &boveda_sat,
+        &String::from_str(&c.env, "CFDI-RET-02"),
+    );
+    assert_eq!(
+        invalido,
+        Err(Ok(soroban_sdk::Error::from_contract_error(Error::InvalidBasisPoints as u32)))
+    );
+}
