@@ -294,3 +294,34 @@ fn pago_con_retencion_fiscal_divide_neto_e_impuesto() {
         Err(Ok(soroban_sdk::Error::from_contract_error(Error::InvalidBasisPoints as u32)))
     );
 }
+
+#[test]
+fn plan_de_parcialidades_liquida_anticipo_y_tramos_en_escrow() {
+    let c = setup();
+    // Contrato de 60,000 MXNe: 30% anticipo inmediato (18,000) + 2 parcialidades de 21,000
+    let plan = c.guard.open_installment_plan(
+        &c.supplier,
+        &(60_000 * UNIT),
+        &3_000,
+        &2,
+        &String::from_str(&c.env, "OBRA-60K"),
+    );
+    assert_eq!(c.token.balance(&c.supplier), 18_000 * UNIT);
+    assert_eq!(plan.remaining, 42_000 * UNIT);
+    assert!(plan.active);
+
+    let p1 = c.guard.pay_installment(&plan.id);
+    assert_eq!(p1.paid_count, 1);
+    assert_eq!(c.token.balance(&c.supplier), 39_000 * UNIT);
+
+    let p2 = c.guard.pay_installment(&plan.id);
+    assert_eq!(p2.paid_count, 2);
+    assert!(!p2.active);
+    assert_eq!(c.token.balance(&c.supplier), 60_000 * UNIT);
+
+    let extra = c.guard.try_pay_installment(&plan.id);
+    assert_eq!(
+        extra,
+        Err(Ok(soroban_sdk::Error::from_contract_error(Error::InstallmentCompleted as u32)))
+    );
+}
