@@ -253,3 +253,13 @@ fn ampliacion_temporal_diaria_expira_al_siguiente_dia() {
     assert_eq!(p.status, Status::Paid);
     assert_eq!(c.guard.get_config().daily_limit, 150_000 * UNIT);
 }
+
+#[test]
+fn transferencia_de_admin_en_dos_pasos_evita_perdida_de_llave() {
+    let c = setup();
+    let nuevo_admin = Address::generate(&c.env);
+    c.guard.propose_admin(&nuevo_admin);
+    let aceptado = c.guard.accept_admin();
+    assert_eq!(aceptado, nuevo_admin);
+    assert_eq!(c.guard.get_config().admin, nuevo_admin);
+}

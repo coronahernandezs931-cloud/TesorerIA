@@ -317,6 +317,37 @@ impl TreasuryGuard {
         new_operator
     }
 
+    /// Paso 1 de transferencia segura de gobierno: el director actual propone al nuevo administrador.
+    pub fn propose_admin(env: Env, candidate: Address) -> Address {
+        let cfg = config(&env);
+        cfg.admin.require_auth();
+        if candidate == cfg.admin {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        env.storage().instance().set(&DataKey::PendingAdmin, &candidate);
+        bump(&env);
+        env.events().publish((symbol_short!("prop_adm"), cfg.admin), candidate.clone());
+        candidate
+    }
+
+    /// Paso 2 de transferencia segura de gobierno: el candidato firma para asumir la administración.
+    pub fn accept_admin(env: Env) -> Address {
+        let candidate: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotPending));
+        candidate.require_auth();
+        let mut cfg = config(&env);
+        let prev = cfg.admin.clone();
+        cfg.admin = candidate.clone();
+        env.storage().instance().set(&DataKey::Config, &cfg);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        bump(&env);
+        env.events().publish((symbol_short!("new_adm"), prev), candidate.clone());
+        candidate
+    }
+
     // ---------- Operación (agente de IA) ----------
 
     /// El agente solicita un pago. Si está bajo el umbral se liquida al instante;
