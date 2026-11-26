@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(deprecated)]
 //! TreasuryGuard — bóveda de tesorería con políticas, sobre Soroban (Stellar).
 //!
 //! Idea central: la IA de voz NUNCA tiene acceso libre al dinero.
@@ -68,6 +69,19 @@ pub struct BatchItem {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct InstallmentPlan {
+    pub id: u64,
+    pub supplier: Address,
+    pub total: i128,
+    pub remaining: i128,
+    pub installments: u32,
+    pub paid_count: u32,
+    pub invoice: String,
+    pub active: bool,
+}
+
+#[contracttype]
 pub enum DataKey {
     Config,
     NextId,
@@ -76,6 +90,7 @@ pub enum DataKey {
     Reserved,
     Supplier(Address),
     Payment(u64),
+    Plan(u64),
     ReleaseAfter(u64),
     Spent(u64),
     Boost(u64),
@@ -100,6 +115,9 @@ pub enum Error {
     EmptyBatch = 11,
     ReservedFundsLocked = 12,
     TimelockActive = 13,
+    InvalidBasisPoints = 14,
+    InstallmentCompleted = 15,
+    CreditExceedsInvoice = 16,
 }
 
 const PENDING_TTL_SECS: u64 = 3 * DAY_SECS; // un pago retenido caduca a los 3 días
@@ -140,6 +158,45 @@ fn reserved(env: &Env) -> i128 {
 fn add_reserved(env: &Env, delta: i128) {
     let next = (reserved(env) + delta).max(0);
     env.storage().instance().set(&DataKey::Reserved, &next);
+}
+
+fn available_balance(env: &Env, cfg: &Config) -> i128 {
+    let tk = token::Client::new(env, &cfg.token);
+    tk.balance(&env.current_contract_address()) - reserved(env)
+}
+
+fn record_spent(env: &Env, cfg: &Config, delta: i128) {
+    let new_spent = spent(env) + delta;
+    if new_spent > cfg.daily_limit + boost_today(env) {
+        panic_with_error!(env, Error::ExceedsDailyLimit);
+    }
+    let key = DataKey::Spent(today(env));
+    env.storage().temporary().set(&key, &new_spent);
+    env.storage().temporary().extend_ttl(&key, 17_280 * 2, 17_280 * 2);
+}
+
+fn require_active_supplier(env: &Env, supplier: &Address) -> Supplier {
+    let s: Supplier = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Supplier(supplier.clone()))
+        .unwrap_or_else(|| panic_with_error!(env, Error::NotWhitelisted));
+    if !s.active {
+        panic_with_error!(env, Error::NotWhitelisted);
+    }
+    s
+}
+
+fn lock_invoice_id(env: &Env, invoice: &String) -> u64 {
+    let inv_key = DataKey::Invoice(invoice.clone());
+    if env.storage().persistent().has(&inv_key) {
+        panic_with_error!(env, Error::DuplicateInvoice);
+    }
+    let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
+    env.storage().persistent().set(&inv_key, &id);
+    env.storage().persistent().extend_ttl(&inv_key, PERSIST_TTL / 2, PERSIST_TTL);
+    env.storage().instance().set(&DataKey::NextId, &(id + 1));
+    id
 }
 
 fn save_payment(env: &Env, p: &Payment) {
