@@ -361,3 +361,22 @@ fn pronto_pago_transfiere_neto_y_segrega_ahorro_financiero() {
     assert_eq!(c.token.balance(&c.supplier), 38_000 * UNIT);
     assert_eq!(c.token.balance(&ahorro_cfo), 2_000 * UNIT);
 }
+
+#[test]
+fn pago_dividido_centro_costos_liquida_ambos_proveedores() {
+    let c = setup();
+    let aduanal = Address::generate(&c.env);
+    c.guard.set_supplier(&aduanal, &String::from_str(&c.env, "Agencia Aduanal Manzanillo"), &(50_000 * UNIT));
+
+    let res = c.guard.split_cost_center_pay(
+        &c.supplier,
+        &aduanal,
+        &(30_000 * UNIT),
+        &7_000,
+        &String::from_str(&c.env, "PEDIMENTO-30K"),
+    );
+    assert_eq!(res.len(), 2);
+    assert_eq!(c.token.balance(&c.supplier), 21_000 * UNIT);
+    assert_eq!(c.token.balance(&aduanal), 9_000 * UNIT);
+    assert_eq!(c.guard.spent_today(), 30_000 * UNIT);
+}

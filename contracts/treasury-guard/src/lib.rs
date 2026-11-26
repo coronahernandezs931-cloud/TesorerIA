@@ -966,6 +966,73 @@ impl TreasuryGuard {
         p
     }
 
+    /// Dispersión compartida por centro de costos / pedimento aduanal: divide atómicamente una
+    /// operación entre dos proveedores de lista blanca según puntos base (primary_bps).
+    pub fn split_cost_center_pay(
+        env: Env,
+        primary_supplier: Address,
+        secondary_supplier: Address,
+        total_amount: i128,
+        primary_bps: u32,
+        invoice: String,
+    ) -> Vec<Payment> {
+        let cfg = config(&env);
+        cfg.operator.require_auth();
+        require_not_paused(&env);
+        bump(&env);
+
+        if total_amount <= 0 || total_amount > cfg.approval_threshold || primary_supplier == secondary_supplier {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        if primary_bps < 1_000 || primary_bps > 9_000 {
+            panic_with_error!(&env, Error::InvalidBasisPoints);
+        }
+        let s1 = require_active_supplier(&env, &primary_supplier);
+        let s2 = require_active_supplier(&env, &secondary_supplier);
+
+        let leg1 = (total_amount * (primary_bps as i128)) / 10_000;
+        let leg2 = total_amount - leg1;
+        if leg1 <= 0 || leg2 <= 0 {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        if leg1 > s1.max_per_tx || leg2 > s2.max_per_tx {
+            panic_with_error!(&env, Error::ExceedsTxLimit);
+        }
+        if available_balance(&env, &cfg) < total_amount {
+            panic_with_error!(&env, Error::InsufficientFunds);
+        }
+
+        let id1 = lock_invoice_id(&env, &invoice);
+        let id2: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(id1 + 1);
+        env.storage().instance().set(&DataKey::NextId, &(id2 + 1));
+
+        let mut p1 = Payment {
+            id: id1,
+            supplier: primary_supplier.clone(),
+            amount: leg1,
+            invoice: invoice.clone(),
+            status: Status::Pending,
+            created_at: env.ledger().timestamp(),
+        };
+        let mut p2 = Payment {
+            id: id2,
+            supplier: secondary_supplier.clone(),
+            amount: leg2,
+            invoice,
+            status: Status::Pending,
+            created_at: env.ledger().timestamp(),
+        };
+        execute(&env, &cfg, &mut p1);
+        execute(&env, &cfg, &mut p2);
+
+        let mut out = Vec::new(&env);
+        out.push_back(p1);
+        out.push_back(p2);
+        env.events()
+            .publish((symbol_short!("splitpay"), primary_supplier), (id1, id2, total_amount));
+        out
+    }
+
     // ---------- Lectura ----------
 
     pub fn get_config(env: Env) -> Config {
