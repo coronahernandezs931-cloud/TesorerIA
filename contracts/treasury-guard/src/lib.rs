@@ -861,6 +861,54 @@ impl TreasuryGuard {
         plan
     }
 
+    /// Aplica un CFDI de Egreso (nota de crédito) a una factura Pending, libera el excedente
+    /// comprometido en la reserva y liquida únicamente el saldo neto al proveedor.
+    pub fn settle_with_credit_note(
+        env: Env,
+        id: u64,
+        credit_amount: i128,
+        credit_note_uuid: String,
+    ) -> Payment {
+        let cfg = config(&env);
+        cfg.admin.require_auth();
+        require_not_paused(&env);
+        bump(&env);
+
+        if credit_amount <= 0 {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        let mut p: Payment = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Payment(id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotFound));
+        if p.status != Status::Pending {
+            panic_with_error!(&env, Error::NotPending);
+        }
+        if env.ledger().timestamp() > p.created_at + PENDING_TTL_SECS {
+            panic_with_error!(&env, Error::Expired);
+        }
+        if credit_amount >= p.amount {
+            panic_with_error!(&env, Error::CreditExceedsInvoice);
+        }
+        require_active_supplier(&env, &p.supplier);
+
+        let cn_key = DataKey::Invoice(credit_note_uuid.clone());
+        if env.storage().persistent().has(&cn_key) {
+            panic_with_error!(&env, Error::DuplicateInvoice);
+        }
+        env.storage().persistent().set(&cn_key, &id);
+        env.storage().persistent().extend_ttl(&cn_key, PERSIST_TTL / 2, PERSIST_TTL);
+
+        let original_amount = p.amount;
+        p.amount = original_amount - credit_amount;
+        add_reserved(&env, -original_amount);
+        execute(&env, &cfg, &mut p);
+        env.events()
+            .publish((symbol_short!("crednote"), p.supplier.clone()), (id, credit_amount, p.amount));
+        p
+    }
+
     // ---------- Lectura ----------
 
     pub fn get_config(env: Env) -> Config {
