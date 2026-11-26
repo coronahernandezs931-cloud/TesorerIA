@@ -1184,3 +1184,22 @@ def reset(request: Request):
         store.put(k, v)
     _cache["t"] = 0
     return {"ok": True}
+
+
+@api.get("/api/contract-capabilities")
+def contract_capabilities():
+    """Resumen auditable de las capacidades activas del contrato Soroban TreasuryGuard."""
+    return {
+        "ok": True,
+        "network": PUB.get("network", "testnet"),
+        "contract_id": GUARD_ID,
+        "domain": "https://tesoreria.lat",
+        "capabilities": [
+            "request_payment", "approve", "reject", "batch_pay",
+            "pause_vault", "unpause_vault", "withdraw_reserve",
+            "schedule_payment", "execute_scheduled", "cancel_scheduled",
+            "grant_daily_boost", "propose_admin", "accept_admin",
+            "expire_payment", "rotate_operator", "set_supplier", "remove_supplier"
+        ],
+        "errors": {str(k): {"code": v[0], "message": v[1]} for k, v in CONTRACT_ERRORS.items()},
+    }
