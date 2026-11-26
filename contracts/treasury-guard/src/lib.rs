@@ -754,6 +754,113 @@ impl TreasuryGuard {
         p
     }
 
+    /// Abre un plan de pagos en parcialidades con anticipo inmediato en cadena y bloqueo de reserva
+    /// para las entregas restantes.
+    pub fn open_installment_plan(
+        env: Env,
+        supplier: Address,
+        total_amount: i128,
+        upfront_bps: u32,
+        installments: u32,
+        invoice: String,
+    ) -> InstallmentPlan {
+        let cfg = config(&env);
+        cfg.operator.require_auth();
+        require_not_paused(&env);
+        bump(&env);
+
+        if total_amount <= 0 || installments == 0 || installments > 12 {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        if upfront_bps < 1_000 || upfront_bps > 5_000 {
+            panic_with_error!(&env, Error::InvalidBasisPoints);
+        }
+        let s = require_active_supplier(&env, &supplier);
+        if total_amount > s.max_per_tx {
+            panic_with_error!(&env, Error::ExceedsTxLimit);
+        }
+        if available_balance(&env, &cfg) < total_amount {
+            panic_with_error!(&env, Error::InsufficientFunds);
+        }
+
+        let upfront = (total_amount * (upfront_bps as i128)) / 10_000;
+        let remaining = total_amount - upfront;
+        if upfront <= 0 || remaining <= 0 || upfront > cfg.approval_threshold {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+
+        let id = lock_invoice_id(&env, &invoice);
+        record_spent(&env, &cfg, upfront);
+        add_reserved(&env, remaining);
+
+        let tk = token::Client::new(&env, &cfg.token);
+        let me = env.current_contract_address();
+        tk.transfer(&me, &supplier, &upfront);
+
+        let plan = InstallmentPlan {
+            id,
+            supplier: supplier.clone(),
+            total: total_amount,
+            remaining,
+            installments,
+            paid_count: 0,
+            invoice,
+            active: true,
+        };
+        let pkey = DataKey::Plan(id);
+        env.storage().persistent().set(&pkey, &plan);
+        env.storage().persistent().extend_ttl(&pkey, PERSIST_TTL / 2, PERSIST_TTL);
+        env.events()
+            .publish((symbol_short!("plan_new"), supplier), (id, upfront, remaining));
+        plan
+    }
+
+    /// Libera y transfiere el siguiente tramo de un plan de parcialidades desde el escrow reservado.
+    pub fn pay_installment(env: Env, plan_id: u64) -> InstallmentPlan {
+        let cfg = config(&env);
+        cfg.operator.require_auth();
+        require_not_paused(&env);
+        bump(&env);
+
+        let pkey = DataKey::Plan(plan_id);
+        let mut plan: InstallmentPlan = env
+            .storage()
+            .persistent()
+            .get(&pkey)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotFound));
+        if !plan.active || plan.paid_count >= plan.installments {
+            panic_with_error!(&env, Error::InstallmentCompleted);
+        }
+        require_active_supplier(&env, &plan.supplier);
+
+        let left = (plan.installments - plan.paid_count) as i128;
+        let tranche = if left == 1 { plan.remaining } else { plan.remaining / left };
+        if tranche <= 0 || tranche > cfg.approval_threshold {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+
+        let tk = token::Client::new(&env, &cfg.token);
+        let me = env.current_contract_address();
+        if tk.balance(&me) < tranche {
+            panic_with_error!(&env, Error::InsufficientFunds);
+        }
+
+        record_spent(&env, &cfg, tranche);
+        add_reserved(&env, -tranche);
+        tk.transfer(&me, &plan.supplier, &tranche);
+
+        plan.remaining -= tranche;
+        plan.paid_count += 1;
+        if plan.paid_count == plan.installments {
+            plan.active = false;
+        }
+        env.storage().persistent().set(&pkey, &plan);
+        env.storage().persistent().extend_ttl(&pkey, PERSIST_TTL / 2, PERSIST_TTL);
+        env.events()
+            .publish((symbol_short!("plan_pay"), plan.supplier.clone()), (plan_id, tranche, plan.paid_count));
+        plan
+    }
+
     // ---------- Lectura ----------
 
     pub fn get_config(env: Env) -> Config {
@@ -784,6 +891,10 @@ impl TreasuryGuard {
 
     pub fn is_paused(env: Env) -> bool {
         env.storage().instance().get(&DataKey::Paused).unwrap_or(false)
+    }
+
+    pub fn get_installment_plan(env: Env, plan_id: u64) -> Option<InstallmentPlan> {
+        env.storage().persistent().get(&DataKey::Plan(plan_id))
     }
 }
 
