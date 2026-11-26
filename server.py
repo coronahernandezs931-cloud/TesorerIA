@@ -237,6 +237,10 @@ CONTRACT_ERRORS = {
     7: ("InsufficientFunds", "la bóveda no tiene fondos suficientes"),
     8: ("DuplicateInvoice", "esa factura ya se pagó o ya está en proceso; el contrato no permite pagarla dos veces"),
     9: ("Expired", "la solicitud de aprobación caducó"),
+    10: ("VaultPaused", "la bóveda se encuentra congelada por protocolo de emergencia antifraude"),
+    11: ("EmptyBatch", "el lote de dispersión no contiene partidas válidas"),
+    12: ("ReservedFundsLocked", "esos fondos están comprometidos para cubrir pagos pendientes de firma"),
+    13: ("TimelockActive", "el plazo programado o ventana de espera aún sigue activo en el ledger"),
 }
 
 
