@@ -78,6 +78,8 @@ pub enum DataKey {
     Payment(u64),
     ReleaseAfter(u64),
     Spent(u64),
+    Boost(u64),
+    PendingAdmin,
     Invoice(String),
 }
 
@@ -121,6 +123,10 @@ fn spent(env: &Env) -> i128 {
     env.storage().temporary().get(&DataKey::Spent(today(env))).unwrap_or(0)
 }
 
+fn boost_today(env: &Env) -> i128 {
+    env.storage().temporary().get(&DataKey::Boost(today(env))).unwrap_or(0)
+}
+
 fn require_not_paused(env: &Env) {
     if env.storage().instance().get(&DataKey::Paused).unwrap_or(false) {
         panic_with_error!(env, Error::VaultPaused);
@@ -145,7 +151,7 @@ fn save_payment(env: &Env, p: &Payment) {
 /// Mueve los fondos y actualiza el gasto del día. Revalida tope diario y saldo.
 fn execute(env: &Env, cfg: &Config, p: &mut Payment) {
     let new_spent = spent(env) + p.amount;
-    if new_spent > cfg.daily_limit {
+    if new_spent > cfg.daily_limit + boost_today(env) {
         panic_with_error!(env, Error::ExceedsDailyLimit);
     }
     let tk = token::Client::new(env, &cfg.token);
@@ -227,6 +233,23 @@ impl TreasuryGuard {
         env.storage().temporary().remove(&DataKey::Spent(today(&env)));
         env.events().publish((symbol_short!("reset"),), today(&env));
         bump(&env);
+    }
+
+    /// Amplía temporalmente el tope diario solo por el día en curso (sin alterar el límite permanente).
+    pub fn grant_daily_boost(env: Env, extra_amount: i128) -> i128 {
+        let cfg = config(&env);
+        cfg.admin.require_auth();
+        if extra_amount <= 0 {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        let day = today(&env);
+        let next_boost = boost_today(&env) + extra_amount;
+        let key = DataKey::Boost(day);
+        env.storage().temporary().set(&key, &next_boost);
+        env.storage().temporary().extend_ttl(&key, 17_280 * 2, 17_280 * 2);
+        bump(&env);
+        env.events().publish((symbol_short!("boost"), cfg.admin), (day, next_boost));
+        cfg.daily_limit + next_boost
     }
 
     /// Botón de pánico antifraude: congela todas las salidas de fondos de la bóveda al instante.

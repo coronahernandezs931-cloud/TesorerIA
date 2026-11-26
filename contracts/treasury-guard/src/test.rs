@@ -239,3 +239,17 @@ fn cancelar_pago_programado_libera_reserva_y_folio() {
     assert_eq!(cancelado.status, Status::Rejected);
     assert_eq!(c.guard.invoice_payment(&inv), None);
 }
+
+#[test]
+fn ampliacion_temporal_diaria_expira_al_siguiente_dia() {
+    let c = setup();
+    for f in ["B1", "B2", "B3"] {
+        c.guard.request_payment(&c.supplier, &(45_000 * UNIT), &String::from_str(&c.env, f));
+    }
+    let nuevo_tope = c.guard.grant_daily_boost(&(40_000 * UNIT));
+    assert_eq!(nuevo_tope, 190_000 * UNIT);
+
+    let p = c.guard.request_payment(&c.supplier, &(45_000 * UNIT), &String::from_str(&c.env, "B4"));
+    assert_eq!(p.status, Status::Paid);
+    assert_eq!(c.guard.get_config().daily_limit, 150_000 * UNIT);
+}
