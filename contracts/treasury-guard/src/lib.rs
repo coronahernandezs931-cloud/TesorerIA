@@ -279,6 +279,21 @@ impl TreasuryGuard {
         remaining
     }
 
+    /// Rotación criptográfica de la llave del agente operador en caso de cambio o revocación de sesión.
+    pub fn rotate_operator(env: Env, new_operator: Address) -> Address {
+        let mut cfg = config(&env);
+        cfg.admin.require_auth();
+        if new_operator == cfg.operator {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        let prev = cfg.operator.clone();
+        cfg.operator = new_operator.clone();
+        env.storage().instance().set(&DataKey::Config, &cfg);
+        bump(&env);
+        env.events().publish((symbol_short!("rot_op"), prev), new_operator.clone());
+        new_operator
+    }
+
     // ---------- Operación (agente de IA) ----------
 
     /// El agente solicita un pago. Si está bajo el umbral se liquida al instante;
@@ -524,6 +539,28 @@ impl TreasuryGuard {
         env.storage().persistent().remove(&DataKey::Invoice(p.invoice.clone()));
         bump(&env);
         env.events().publish((symbol_short!("rejected"), p.supplier.clone()), id);
+        p
+    }
+
+    /// Limpia una solicitud Pending que excedió su ventana de 72 horas, liberando su folio fiscal y reserva.
+    pub fn expire_payment(env: Env, id: u64) -> Payment {
+        let mut p: Payment = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Payment(id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotFound));
+        if p.status != Status::Pending {
+            panic_with_error!(&env, Error::NotPending);
+        }
+        if env.ledger().timestamp() <= p.created_at + PENDING_TTL_SECS {
+            panic_with_error!(&env, Error::TimelockActive);
+        }
+        add_reserved(&env, -p.amount);
+        p.status = Status::Expired;
+        save_payment(&env, &p);
+        env.storage().persistent().remove(&DataKey::Invoice(p.invoice.clone()));
+        bump(&env);
+        env.events().publish((symbol_short!("expired"), p.supplier.clone()), id);
         p
     }
 

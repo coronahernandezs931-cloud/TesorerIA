@@ -207,3 +207,25 @@ fn pago_programado_respeta_timelock_y_liquida_al_vencer() {
     assert_eq!(pagado.status, Status::Paid);
     assert_eq!(c.token.balance(&c.supplier), 15_000 * UNIT);
 }
+
+#[test]
+fn expirar_pago_vencido_libera_folio_y_reserva() {
+    let c = setup();
+    let inv = String::from_str(&c.env, "EXP-99");
+    let p = c.guard.request_payment(&c.supplier, &(70_000 * UNIT), &inv);
+    assert_eq!(p.status, Status::Pending);
+
+    c.env.ledger().with_mut(|li| li.timestamp += PENDING_TTL_SECS + 10);
+    let exp = c.guard.expire_payment(&p.id);
+    assert_eq!(exp.status, Status::Expired);
+    assert_eq!(c.guard.invoice_payment(&inv), None);
+}
+
+#[test]
+fn rotacion_de_operador_actualiza_agente() {
+    let c = setup();
+    let nuevo = Address::generate(&c.env);
+    let res = c.guard.rotate_operator(&nuevo);
+    assert_eq!(res, nuevo);
+    assert_eq!(c.guard.get_config().operator, nuevo);
+}
