@@ -229,3 +229,13 @@ fn rotacion_de_operador_actualiza_agente() {
     assert_eq!(res, nuevo);
     assert_eq!(c.guard.get_config().operator, nuevo);
 }
+
+#[test]
+fn cancelar_pago_programado_libera_reserva_y_folio() {
+    let c = setup();
+    let inv = String::from_str(&c.env, "HITO-CANCEL");
+    let p = c.guard.schedule_payment(&c.supplier, &(20_000 * UNIT), &inv, &7_200);
+    let cancelado = c.guard.cancel_scheduled(&p.id);
+    assert_eq!(cancelado.status, Status::Rejected);
+    assert_eq!(c.guard.invoice_payment(&inv), None);
+}

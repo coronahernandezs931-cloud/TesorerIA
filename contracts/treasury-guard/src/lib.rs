@@ -491,6 +491,28 @@ impl TreasuryGuard {
         p
     }
 
+    /// Cancela un pago programado antes de su ejecución, liberando la reserva comprometida y el folio UUID.
+    pub fn cancel_scheduled(env: Env, id: u64) -> Payment {
+        let cfg = config(&env);
+        cfg.admin.require_auth();
+        let mut p: Payment = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Payment(id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotFound));
+        if p.status != Status::Scheduled {
+            panic_with_error!(&env, Error::NotPending);
+        }
+        add_reserved(&env, -p.amount);
+        p.status = Status::Rejected;
+        save_payment(&env, &p);
+        env.storage().persistent().remove(&DataKey::Invoice(p.invoice.clone()));
+        env.storage().persistent().remove(&DataKey::ReleaseAfter(id));
+        bump(&env);
+        env.events().publish((symbol_short!("can_sch"), p.supplier.clone()), id);
+        p
+    }
+
     /// Segundo factor humano: el dueño aprueba un pago retenido.
     pub fn approve(env: Env, id: u64) -> Payment {
         let cfg = config(&env);
