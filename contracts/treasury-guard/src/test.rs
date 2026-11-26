@@ -2,7 +2,11 @@
 extern crate std;
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, token::StellarAssetClient, Address, Env, String};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    token::StellarAssetClient,
+    Address, Env, String,
+};
 
 const UNIT: i128 = 10_000_000; // 7 decimales
 
@@ -181,4 +185,25 @@ fn retiro_de_reserva_protege_fondos_comprometidos() {
     let libre = c.guard.withdraw_reserve(&tesoreria_ext, &(100_000 * UNIT));
     assert_eq!(libre, 810_000 * UNIT);
     assert_eq!(c.token.balance(&tesoreria_ext), 100_000 * UNIT);
+}
+
+#[test]
+fn pago_programado_respeta_timelock_y_liquida_al_vencer() {
+    let c = setup();
+    let p = c.guard.schedule_payment(
+        &c.supplier,
+        &(15_000 * UNIT),
+        &String::from_str(&c.env, "HITO-01"),
+        &3_600,
+    );
+    assert_eq!(p.status, Status::Scheduled);
+    assert_eq!(c.token.balance(&c.supplier), 0);
+
+    let antes = c.guard.try_execute_scheduled(&p.id);
+    assert_eq!(antes, Err(Ok(soroban_sdk::Error::from_contract_error(Error::TimelockActive as u32))));
+
+    c.env.ledger().with_mut(|li| li.timestamp += 3_601);
+    let pagado = c.guard.execute_scheduled(&p.id);
+    assert_eq!(pagado.status, Status::Paid);
+    assert_eq!(c.token.balance(&c.supplier), 15_000 * UNIT);
 }

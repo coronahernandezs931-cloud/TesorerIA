@@ -44,6 +44,8 @@ pub enum Status {
     Pending = 0,
     Paid = 1,
     Rejected = 2,
+    Scheduled = 3,
+    Expired = 4,
 }
 
 #[contracttype]
@@ -74,6 +76,7 @@ pub enum DataKey {
     Reserved,
     Supplier(Address),
     Payment(u64),
+    ReleaseAfter(u64),
     Spent(u64),
     Invoice(String),
 }
@@ -94,6 +97,7 @@ pub enum Error {
     VaultPaused = 10,
     EmptyBatch = 11,
     ReservedFundsLocked = 12,
+    TimelockActive = 13,
 }
 
 const PENDING_TTL_SECS: u64 = 3 * DAY_SECS; // un pago retenido caduca a los 3 días
@@ -379,6 +383,97 @@ impl TreasuryGuard {
         }
         env.events().publish((symbol_short!("batch"),), results.len());
         results
+    }
+
+    /// Programa un pago diferido con timelock en ledger (ej. anticipo o hito a liberar tras entrega).
+    pub fn schedule_payment(
+        env: Env,
+        supplier: Address,
+        amount: i128,
+        invoice: String,
+        delay_secs: u64,
+    ) -> Payment {
+        let cfg = config(&env);
+        cfg.operator.require_auth();
+        require_not_paused(&env);
+        bump(&env);
+
+        if amount <= 0 || amount > cfg.approval_threshold {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        let s: Supplier = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Supplier(supplier.clone()))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotWhitelisted));
+        if !s.active {
+            panic_with_error!(&env, Error::NotWhitelisted);
+        }
+        if amount > s.max_per_tx {
+            panic_with_error!(&env, Error::ExceedsTxLimit);
+        }
+        let inv_key = DataKey::Invoice(invoice.clone());
+        if env.storage().persistent().has(&inv_key) {
+            panic_with_error!(&env, Error::DuplicateInvoice);
+        }
+
+        let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
+        env.storage().persistent().set(&inv_key, &id);
+        env.storage().persistent().extend_ttl(&inv_key, PERSIST_TTL / 2, PERSIST_TTL);
+        env.storage().instance().set(&DataKey::NextId, &(id + 1));
+
+        let release_at = env.ledger().timestamp() + delay_secs;
+        let rel_key = DataKey::ReleaseAfter(id);
+        env.storage().persistent().set(&rel_key, &release_at);
+        env.storage().persistent().extend_ttl(&rel_key, PERSIST_TTL / 2, PERSIST_TTL);
+
+        add_reserved(&env, amount);
+        let p = Payment {
+            id,
+            supplier: supplier.clone(),
+            amount,
+            invoice,
+            status: Status::Scheduled,
+            created_at: env.ledger().timestamp(),
+        };
+        save_payment(&env, &p);
+        env.events()
+            .publish((symbol_short!("sched"), supplier), (id, amount, release_at));
+        p
+    }
+
+    /// Liquida un pago programado una vez cumplido su timelock en el ledger.
+    pub fn execute_scheduled(env: Env, id: u64) -> Payment {
+        let cfg = config(&env);
+        require_not_paused(&env);
+        let mut p: Payment = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Payment(id))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotFound));
+        if p.status != Status::Scheduled {
+            panic_with_error!(&env, Error::NotPending);
+        }
+        let release_at: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ReleaseAfter(id))
+            .unwrap_or(p.created_at);
+        if env.ledger().timestamp() < release_at {
+            panic_with_error!(&env, Error::TimelockActive);
+        }
+        let s: Supplier = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Supplier(p.supplier.clone()))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotWhitelisted));
+        if !s.active {
+            panic_with_error!(&env, Error::NotWhitelisted);
+        }
+        add_reserved(&env, -p.amount);
+        execute(&env, &cfg, &mut p);
+        bump(&env);
+        p
     }
 
     /// Segundo factor humano: el dueño aprueba un pago retenido.
