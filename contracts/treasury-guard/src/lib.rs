@@ -909,6 +909,63 @@ impl TreasuryGuard {
         p
     }
 
+    /// Liquidación anticipada con descuento por pronto pago (0.5% a 20%): paga el neto al proveedor
+    /// y transfiere el rendimiento ahorrado a la bóveda de ahorro financiero de la empresa.
+    pub fn pay_early_discounted(
+        env: Env,
+        supplier: Address,
+        face_amount: i128,
+        discount_bps: u32,
+        savings_vault: Address,
+        invoice: String,
+    ) -> Payment {
+        let cfg = config(&env);
+        cfg.operator.require_auth();
+        require_not_paused(&env);
+        bump(&env);
+
+        if face_amount <= 0 || face_amount > cfg.approval_threshold || savings_vault == supplier {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        if discount_bps < 50 || discount_bps > 2_000 {
+            panic_with_error!(&env, Error::InvalidBasisPoints);
+        }
+        let s = require_active_supplier(&env, &supplier);
+        if face_amount > s.max_per_tx {
+            panic_with_error!(&env, Error::ExceedsTxLimit);
+        }
+        if available_balance(&env, &cfg) < face_amount {
+            panic_with_error!(&env, Error::InsufficientFunds);
+        }
+
+        let discount = (face_amount * (discount_bps as i128)) / 10_000;
+        let net_amount = face_amount - discount;
+        if discount <= 0 || net_amount <= 0 {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+
+        let id = lock_invoice_id(&env, &invoice);
+        record_spent(&env, &cfg, face_amount);
+
+        let tk = token::Client::new(&env, &cfg.token);
+        let me = env.current_contract_address();
+        tk.transfer(&me, &supplier, &net_amount);
+        tk.transfer(&me, &savings_vault, &discount);
+
+        let p = Payment {
+            id,
+            supplier: supplier.clone(),
+            amount: net_amount,
+            invoice,
+            status: Status::Paid,
+            created_at: env.ledger().timestamp(),
+        };
+        save_payment(&env, &p);
+        env.events()
+            .publish((symbol_short!("pronto"), supplier), (id, net_amount, discount));
+        p
+    }
+
     // ---------- Lectura ----------
 
     pub fn get_config(env: Env) -> Config {

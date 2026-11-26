@@ -343,3 +343,21 @@ fn liquidar_con_nota_de_credito_descuenta_y_libera_reserva() {
     let dup = c.guard.try_settle_with_credit_note(&p2.id, &(5_000 * UNIT), &cn);
     assert_eq!(dup, Err(Ok(soroban_sdk::Error::from_contract_error(Error::DuplicateInvoice as u32))));
 }
+
+#[test]
+fn pronto_pago_transfiere_neto_y_segrega_ahorro_financiero() {
+    let c = setup();
+    let ahorro_cfo = Address::generate(&c.env);
+    // Factura nominal de 40,000 MXNe con 5% de descuento por pronto pago (500 bps -> 2,000 ahorro, 38,000 proveedor)
+    let p = c.guard.pay_early_discounted(
+        &c.supplier,
+        &(40_000 * UNIT),
+        &500,
+        &ahorro_cfo,
+        &String::from_str(&c.env, "PRONTO-40K"),
+    );
+    assert_eq!(p.status, Status::Paid);
+    assert_eq!(p.amount, 38_000 * UNIT);
+    assert_eq!(c.token.balance(&c.supplier), 38_000 * UNIT);
+    assert_eq!(c.token.balance(&ahorro_cfo), 2_000 * UNIT);
+}
