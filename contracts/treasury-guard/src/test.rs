@@ -126,3 +126,19 @@ fn reset_day_reinicia_gasto_sin_cambiar_limite() {
     assert_eq!(c.guard.spent_today(), 0);
     assert_eq!(c.guard.get_config().daily_limit, 150_000 * UNIT);
 }
+
+#[test]
+fn pausa_de_emergencia_bloquea_y_reactiva_pagos() {
+    let c = setup();
+    assert!(!c.guard.is_paused());
+    c.guard.pause_vault(&String::from_str(&c.env, "Alerta cambio de cuenta"));
+    assert!(c.guard.is_paused());
+
+    let r = c.guard.try_request_payment(&c.supplier, &(5_000 * UNIT), &String::from_str(&c.env, "P-01"));
+    assert_eq!(r, Err(Ok(soroban_sdk::Error::from_contract_error(Error::VaultPaused as u32))));
+
+    c.guard.unpause_vault();
+    assert!(!c.guard.is_paused());
+    let p = c.guard.request_payment(&c.supplier, &(5_000 * UNIT), &String::from_str(&c.env, "P-01"));
+    assert_eq!(p.status, Status::Paid);
+}

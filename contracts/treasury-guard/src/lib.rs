@@ -12,7 +12,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
-    Address, Env, String,
+    Address, Env, String, Vec,
 };
 
 const DAY_SECS: u64 = 86_400;
@@ -61,6 +61,8 @@ pub struct Payment {
 pub enum DataKey {
     Config,
     NextId,
+    Paused,
+    PauseReason,
     Supplier(Address),
     Payment(u64),
     Spent(u64),
@@ -80,6 +82,7 @@ pub enum Error {
     InsufficientFunds = 7,
     DuplicateInvoice = 8,
     Expired = 9,
+    VaultPaused = 10,
 }
 
 const PENDING_TTL_SECS: u64 = 3 * DAY_SECS; // un pago retenido caduca a los 3 días
@@ -101,6 +104,12 @@ fn today(env: &Env) -> u64 {
 
 fn spent(env: &Env) -> i128 {
     env.storage().temporary().get(&DataKey::Spent(today(env))).unwrap_or(0)
+}
+
+fn require_not_paused(env: &Env) {
+    if env.storage().instance().get(&DataKey::Paused).unwrap_or(false) {
+        panic_with_error!(env, Error::VaultPaused);
+    }
 }
 
 fn save_payment(env: &Env, p: &Payment) {
@@ -196,6 +205,32 @@ impl TreasuryGuard {
         bump(&env);
     }
 
+    /// Botón de pánico antifraude: congela todas las salidas de fondos de la bóveda al instante.
+    pub fn pause_vault(env: Env, reason: String) {
+        let cfg = config(&env);
+        cfg.admin.require_auth();
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.storage().instance().set(&DataKey::PauseReason, &reason);
+        bump(&env);
+        env.events()
+            .publish((symbol_short!("paused"), cfg.admin), (env.ledger().timestamp(), reason));
+    }
+
+    /// Reactiva la operación de la bóveda tras auditoría del director.
+    pub fn unpause_vault(env: Env) {
+        let cfg = config(&env);
+        cfg.admin.require_auth();
+        let was_paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
+        if !was_paused {
+            panic_with_error!(&env, Error::NotPending);
+        }
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.storage().instance().remove(&DataKey::PauseReason);
+        bump(&env);
+        env.events()
+            .publish((symbol_short!("unpaused"), cfg.admin), env.ledger().timestamp());
+    }
+
     // ---------- Operación (agente de IA) ----------
 
     /// El agente solicita un pago. Si está bajo el umbral se liquida al instante;
@@ -203,6 +238,7 @@ impl TreasuryGuard {
     pub fn request_payment(env: Env, supplier: Address, amount: i128, invoice: String) -> Payment {
         let cfg = config(&env);
         cfg.operator.require_auth();
+        require_not_paused(&env);
         bump(&env);
 
         if amount <= 0 {
@@ -252,6 +288,7 @@ impl TreasuryGuard {
     pub fn approve(env: Env, id: u64) -> Payment {
         let cfg = config(&env);
         cfg.admin.require_auth();
+        require_not_paused(&env);
         let mut p: Payment = env
             .storage()
             .persistent()
@@ -322,6 +359,10 @@ impl TreasuryGuard {
     pub fn balance(env: Env) -> i128 {
         let cfg = config(&env);
         token::Client::new(&env, &cfg.token).balance(&env.current_contract_address())
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        env.storage().instance().get(&DataKey::Paused).unwrap_or(false)
     }
 }
 
