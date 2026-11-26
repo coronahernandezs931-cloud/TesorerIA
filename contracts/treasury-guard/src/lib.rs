@@ -697,6 +697,63 @@ impl TreasuryGuard {
         p
     }
 
+    /// Pago fiscal con retención automática (ej. IVA 4% fletes o ISR/IVA honorarios):
+    /// transfiere el neto al proveedor autorizado y segrega la retención hacia la bóveda fiscal.
+    pub fn pay_with_withholding(
+        env: Env,
+        supplier: Address,
+        gross_amount: i128,
+        withholding_bps: u32,
+        tax_vault: Address,
+        invoice: String,
+    ) -> Payment {
+        let cfg = config(&env);
+        cfg.operator.require_auth();
+        require_not_paused(&env);
+        bump(&env);
+
+        if gross_amount <= 0 || gross_amount > cfg.approval_threshold || tax_vault == supplier {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+        if withholding_bps == 0 || withholding_bps > 3_500 {
+            panic_with_error!(&env, Error::InvalidBasisPoints);
+        }
+        let s = require_active_supplier(&env, &supplier);
+        if gross_amount > s.max_per_tx {
+            panic_with_error!(&env, Error::ExceedsTxLimit);
+        }
+        if available_balance(&env, &cfg) < gross_amount {
+            panic_with_error!(&env, Error::InsufficientFunds);
+        }
+
+        let retained = (gross_amount * (withholding_bps as i128)) / 10_000;
+        let net_amount = gross_amount - retained;
+        if retained <= 0 || net_amount <= 0 {
+            panic_with_error!(&env, Error::InvalidAmount);
+        }
+
+        let id = lock_invoice_id(&env, &invoice);
+        record_spent(&env, &cfg, gross_amount);
+
+        let tk = token::Client::new(&env, &cfg.token);
+        let me = env.current_contract_address();
+        tk.transfer(&me, &supplier, &net_amount);
+        tk.transfer(&me, &tax_vault, &retained);
+
+        let p = Payment {
+            id,
+            supplier: supplier.clone(),
+            amount: net_amount,
+            invoice,
+            status: Status::Paid,
+            created_at: env.ledger().timestamp(),
+        };
+        save_payment(&env, &p);
+        env.events()
+            .publish((symbol_short!("withhold"), supplier), (id, net_amount, retained));
+        p
+    }
+
     // ---------- Lectura ----------
 
     pub fn get_config(env: Env) -> Config {
