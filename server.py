@@ -1208,3 +1208,147 @@ def contract_capabilities():
         ],
         "errors": {str(k): {"code": v[0], "message": v[1]} for k, v in CONTRACT_ERRORS.items()},
     }
+
+# ---------- Producción en Stellar Public Mainnet (TreasuryMainnet + TreasuryMainnetOps)
+MAINNET_CONTRACT_ID = "CDPDGQLXFSKWFAPKE5OL6DUWRYLEZ3SWL5ENMXEYCZ47H7Z6IHBSHRS7"
+MAINNET_OPS_CONTRACT_ID = "CDBUJWHQ34RJS2WLK3RUOHIPQHHT5BCMIE3JIQZPSSDBXMFJHABQDLWC"
+MAINNET_RPC_URL = "https://mainnet.sorobanrpc.com"
+MAINNET_XLM_SAC = "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+MAINNET_SUPPLIER = "GACBKZS4DGVUF4RKN6ZQNP7UZTNVAXV4BXDZ72IOYR47TFC4GQUXJSYT"
+MAINNET_WORKER_B = "GBVZW3KCFVO53MBHEOFYJ5AJ6JHWCJFALTAO63NAJJY7AF5WLNX7X5RB"
+MAINNET_DIRECTOR = "GBVZW3KCFVO53MBHEOFYJ5AJ6JHWCJFALTAO63NAJJY7AF5WLNX7X5RB"
+_mainnet_lock = threading.Lock()
+
+
+def _mainnet_secret() -> str:
+    sec = os.environ.get("MAINNET_OWNER_SECRET")
+    if not sec:
+        f_sec = HERE / "state" / "mainnet_wallets.secret.json"
+        if f_sec.exists():
+            sec = json.loads(f_sec.read_text("utf-8"))["mainnet_owner_sec"]
+    if not sec:
+        raise RuntimeError("Llave de Mainnet no configurada")
+    return sec
+
+
+def _mainnet_invoke(contract_id: str, fn: str, params: list, detail: str):
+    t0 = time.time()
+    kp = Keypair.from_secret(_mainnet_secret())
+    txs = store.get("mainnet_txs", []) or []
+    if len(txs) >= 25:
+        raise RuntimeError("Límite de operaciones públicas de demostración alcanzado")
+    with _mainnet_lock:
+        c = ContractClient(contract_id, MAINNET_RPC_URL, Network.PUBLIC_NETWORK_PASSPHRASE)
+        at = c.invoke(fn, params, source=kp.public_key, signer=kp, parse_result_xdr_fn=scval.to_native, base_fee=10_000)
+        at.sign_and_submit()
+        txh = at.built_transaction.hash_hex()
+    secs = round(time.time() - t0, 1)
+    entry = {"fn": fn, "contract": contract_id, "detail": detail, "hash": txh, "seconds": secs, "ts": now_iso()}
+    cur = store.get("mainnet_txs", []) or []
+    cur.insert(0, entry)
+    store.put("mainnet_txs", cur[:30])
+    return {"ok": True, "fn": fn, "hash": txh, "seconds": secs, "explorer": f"https://stellar.expert/explorer/public/tx/{txh}"}
+
+
+@api.get("/mainnet")
+def mainnet_page():
+    return FileResponse(WEB / "mainnet.html", headers=NO_CACHE)
+
+
+@api.get("/api/mainnet/state")
+def mainnet_state():
+    v1, v2, sp = 0.0, 0.0, 0.0
+    try:
+        c_sac = ContractClient(MAINNET_XLM_SAC, MAINNET_RPC_URL, Network.PUBLIC_NETWORK_PASSPHRASE)
+        v1 = (c_sac.invoke("balance", [scval.to_address(MAINNET_CONTRACT_ID)], source=MAINNET_DIRECTOR, parse_result_xdr_fn=scval.to_native).result() or 0) / 1e7
+        v2 = (c_sac.invoke("balance", [scval.to_address(MAINNET_OPS_CONTRACT_ID)], source=MAINNET_DIRECTOR, parse_result_xdr_fn=scval.to_native).result() or 0) / 1e7
+        c_m = ContractClient(MAINNET_CONTRACT_ID, MAINNET_RPC_URL, Network.PUBLIC_NETWORK_PASSPHRASE)
+        sp = (c_m.invoke("spent_today", [], source=MAINNET_DIRECTOR, parse_result_xdr_fn=scval.to_native).result() or 0) / 1e7
+    except Exception:
+        pass
+    txs = store.get("mainnet_txs", []) or []
+    return {
+        "ok": True,
+        "network": "Stellar Public Mainnet",
+        "contract": MAINNET_CONTRACT_ID,
+        "ops_contract": MAINNET_OPS_CONTRACT_ID,
+        "supplier": MAINNET_SUPPLIER,
+        "vault_xlm": round(v1, 5),
+        "ops_vault_xlm": round(v2, 5),
+        "spent_xlm": round(sp, 5),
+        "next_suffix": f"27{len(txs) + 1}",
+        "txs": txs,
+    }
+
+
+@api.post("/api/mainnet/set-supplier")
+async def mainnet_set_supplier(request: Request):
+    b = await args_of(request)
+    sup = str(b.get("supplier") or MAINNET_SUPPLIER).strip()
+    max_stroops = max(50_000, min(5_000_000, int(float(b.get("max_xlm") or 0.25) * 1e7)))
+    try:
+        return await run_in_threadpool(
+            _mainnet_invoke, MAINNET_CONTRACT_ID, "set_supplier",
+            [scval.to_address(sup), scval.to_int128(max_stroops)], f"Tope {max_stroops/1e7:.2f} XLM"
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)[:220]}, 400)
+
+
+@api.post("/api/mainnet/pay")
+async def mainnet_pay(request: Request):
+    b = await args_of(request)
+    folio = re.sub(r"[^A-Za-z0-9_]", "", str(b.get("folio") or "CFDI27A").upper())[:9] or "CFDI27A"
+    amt = max(50_000, min(400_000, int(float(b.get("amount_xlm") or 0.02) * 1e7)))
+    try:
+        return await run_in_threadpool(
+            _mainnet_invoke, MAINNET_CONTRACT_ID, "pay_invoice",
+            [scval.to_address(MAINNET_SUPPLIER), scval.to_int128(amt), scval.to_symbol(folio)], f"{folio} · {amt/1e7:.2f} XLM"
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)[:220]}, 400)
+
+
+@api.post("/api/mainnet/pay-tax")
+async def mainnet_pay_tax(request: Request):
+    b = await args_of(request)
+    folio = re.sub(r"[^A-Za-z0-9_]", "", str(b.get("folio") or "RET27A").upper())[:9] or "RET27A"
+    bps = max(100, min(3500, int(b.get("tax_bps") or 1000)))
+    gross = 200_000  # 0.02 XLM
+    try:
+        return await run_in_threadpool(
+            _mainnet_invoke, MAINNET_OPS_CONTRACT_ID, "pay_with_tax",
+            [scval.to_address(MAINNET_SUPPLIER), scval.to_address(MAINNET_DIRECTOR), scval.to_int128(gross), scval.to_uint32(bps), scval.to_symbol(folio)],
+            f"{folio} · Retención {bps/100:.1f}%"
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)[:220]}, 400)
+
+
+@api.post("/api/mainnet/payroll")
+async def mainnet_payroll(request: Request):
+    b = await args_of(request)
+    period = re.sub(r"[^A-Za-z0-9_]", "", str(b.get("period") or "QUIN22A").upper())[:9] or "QUIN22A"
+    each = max(50_000, min(200_000, int(float(b.get("amount_xlm") or 0.01) * 1e7)))
+    try:
+        return await run_in_threadpool(
+            _mainnet_invoke, MAINNET_OPS_CONTRACT_ID, "batch_payroll",
+            [scval.to_address(MAINNET_SUPPLIER), scval.to_address(MAINNET_WORKER_B), scval.to_int128(each), scval.to_symbol(period)],
+            f"{period} · 2 pagos"
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)[:220]}, 400)
+
+
+@api.post("/api/mainnet/sweep")
+async def mainnet_sweep(request: Request):
+    b = await args_of(request)
+    dest = str(b.get("dest") or MAINNET_DIRECTOR).strip()
+    amt = max(50_000, min(300_000, int(float(b.get("amount_xlm") or 0.02) * 1e7)))
+    try:
+        return await run_in_threadpool(
+            _mainnet_invoke, MAINNET_OPS_CONTRACT_ID, "sweep_reserve",
+            [scval.to_address(dest), scval.to_int128(amt)], f"Barrido {amt/1e7:.2f} XLM"
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)[:220]}, 400)

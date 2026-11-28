@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TesorerIA · Operación en Stellar Mainnet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-freighter-api/2.0.0/index.min.js" defer></script>
+<style>
+:root{
+  --ground:#f2f4f7; --surface:#fff; --raised:#eef0f3; --border:#e3e6ea; --rule:#eef0f2;
+  --text:#0a0a0a; --muted:#5f6670; --primary:#141414; --hue:#1d5fbf;
+  --positive:#247b50; --pill-positive-bg:#dcfae5; --pill-positive-ink:#04250e;
+  --font:"Geist",Inter,system-ui,sans-serif; --mono:"Geist Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--text);font:400 14px/20px var(--font);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;padding:28px 20px 64px}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.top a.back{text-decoration:none;color:var(--muted);font-size:13px}
+.top a.back:hover{color:var(--text);text-decoration:underline}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:500;background:var(--pill-positive-bg);color:var(--pill-positive-ink)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--positive)}
+h1{margin:0 0 6px;font-size:26px;font-weight:500;letter-spacing:-.01em}
+.sub{margin:0 0 22px;color:var(--muted);font-size:15px;max-width:820px}
+.layout{display:grid;grid-template-columns:1.35fr .65fr;gap:14px;align-items:start}
+@media(max-width:860px){.layout{grid-template-columns:1fr}}
+.fn-grid{display:grid;gap:12px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px 20px}
+.card h2{margin:0 0 4px;font-size:15.5px;font-weight:500;display:flex;align-items:center;gap:8px}
+.card p.desc{margin:0 0 12px;font-size:13px;color:var(--muted)}
+.fn-tag{font:500 12px var(--mono);background:var(--raised);padding:2px 7px;border-radius:4px;color:var(--hue)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+@media(max-width:600px){.row2{grid-template-columns:1fr}}
+.field{display:grid;gap:4px}
+.field label{font-size:12px;color:var(--muted)}
+.field input{height:34px;padding:0 10px;border:1px solid #d0d4da;border-radius:6px;font:400 13px var(--mono);width:100%}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border-radius:6px;border:1px solid #d0d4da;background:var(--surface);cursor:pointer;font:500 13.5px var(--font);color:var(--text);text-decoration:none}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn[disabled]{opacity:.55;cursor:progress}
+.kv{margin:0;padding:0;list-style:none}
+.kv li{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--rule);font-size:13px}
+.kv li:first-child{border-top:0}
+.mono{font-family:var(--mono);font-size:12px;word-break:break-all}
+.msg{margin-top:10px;padding:9px 11px;border-radius:6px;background:var(--raised);font-size:12.5px}
+.txs{margin:10px 0 0;padding:0;list-style:none}
+.txs li{padding:9px 0;border-top:1px solid var(--rule);font-size:12.5px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.txs a{color:var(--hue);font-family:var(--mono);text-decoration:none}
+.txs a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="back" href="/">← Volver al tablero principal</a>
+    <button class="btn" id="btnFreighter" type="button" style="margin-left:auto">Conectar Freighter</button>
+    <span class="pill"><span class="dot"></span>Stellar Public Mainnet · En Producción</span>
+  </div>
+
+  <h1>Bóveda Corporativa en Stellar Mainnet</h1>
+  <p class="sub">Las 5 funciones principales de <b>TesorerIA</b> desplegadas y conectadas en vivo sobre <b>Stellar Public Mainnet</b> (<code>TreasuryMainnet</code> y <code>TreasuryMainnetOps</code>) con XLM reales vía SAC.</p>
+
+  <div class="layout">
+    <div class="fn-grid">
+      <!-- Función 1: set_supplier -->
+      <section class="card" id="card-set-supplier">
+        <h2>1. Lista Blanca de Proveedores <span class="fn-tag">set_supplier()</span></h2>
+        <p class="desc">Registra o actualiza el tope máximo autorizado por operación para un proveedor en Mainnet.</p>
+        <div class="row2">
+          <div class="field"><label>Cuenta del proveedor (G…)</label><input id="f1-sup" value="GACBKZS4DGVUF4RKN6ZQNP7UZTNVAXV4BXDZ72IOYR47TFC4GQUXJSYT" /></div>
+          <div class="field"><label>Tope por factura (XLM)</label><input id="f1-max" value="0.25" /></div>
+        </div>
+        <button class="btn primary" id="btnFn1">Ejecutar set_supplier en Mainnet</button>
+        <div class="msg" id="out1" hidden></div>
+      </section>
+
+      <!-- Función 2: pay_invoice -->
+      <section class="card" id="card-pay-invoice">
+        <h2>2. Liquidación de Factura CFDI <span class="fn-tag">pay_invoice()</span></h2>
+        <p class="desc">Verifica lista blanca, tope diario y candado anti-doble pago por folio antes de transferir XLM vía SAC.</p>
+        <div class="row2">
+          <div class="field"><label>Folio fiscal CFDI (único)</label><input id="f2-folio" value="CFDI27A" maxlength="9" /></div>
+          <div class="field"><label>Monto a liquidar (XLM)</label><input id="f2-amt" value="0.02" /></div>
+        </div>
+        <button class="btn primary" id="btnFn2">Ejecutar pay_invoice en Mainnet</button>
+        <div class="msg" id="out2" hidden></div>
+      </section>
+
+      <!-- Función 3: pay_with_tax -->
+      <section class="card" id="card-pay-with-tax">
+        <h2>3. Pago con Retención Fiscal SAT <span class="fn-tag">pay_with_tax()</span></h2>
+        <p class="desc">Divide atómicamente el pago en Mainnet: neto al proveedor y retención IVA/ISR a la bóveda fiscal.</p>
+        <div class="row2">
+          <div class="field"><label>Folio retención</label><input id="f3-folio" value="RET27A" maxlength="9" /></div>
+          <div class="field"><label>Retención (bps, 1000 = 10%)</label><input id="f3-bps" value="1000" /></div>
+        </div>
+        <button class="btn primary" id="btnFn3">Ejecutar pay_with_tax en Mainnet</button>
+        <div class="msg" id="out3" hidden></div>
+      </section>
+
+      <!-- Función 4: batch_payroll -->
+      <section class="card" id="card-batch-payroll">
+        <h2>4. Dispersión de Nómina en Lote <span class="fn-tag">batch_payroll()</span></h2>
+        <p class="desc">Liquida en una sola transacción atómica la quincena de múltiples colaboradores sobre Stellar Mainnet.</p>
+        <div class="row2">
+          <div class="field"><label>Periodo de nómina</label><input id="f4-period" value="QUIN22A" maxlength="9" /></div>
+          <div class="field"><label>Monto por colaborador (XLM)</label><input id="f4-amt" value="0.01" /></div>
+        </div>
+        <button class="btn primary" id="btnFn4">Ejecutar batch_payroll en Mainnet</button>
+        <div class="msg" id="out4" hidden></div>
+      </section>
+
+      <!-- Función 5: sweep_reserve -->
+      <section class="card" id="card-sweep-reserve">
+        <h2>5. Barrido de Reserva de Tesorería <span class="fn-tag">sweep_reserve()</span></h2>
+        <p class="desc">Transfiere liquidez excedente desde el contrato operativo hacia la cuenta maestra del director.</p>
+        <div class="row2">
+          <div class="field"><label>Cuenta destino (Tesorería)</label><input id="f5-dest" value="GBVZW3KCFVO53MBHEOFYJ5AJ6JHWCJFALTAO63NAJJY7AF5WLNX7X5RB" /></div>
+          <div class="field"><label>Monto a retirar (XLM)</label><input id="f5-amt" value="0.02" /></div>
+        </div>
+        <button class="btn primary" id="btnFn5">Ejecutar sweep_reserve en Mainnet</button>
+        <div class="msg" id="out5" hidden></div>
+      </section>
+    </div>
+
+    <aside style="display:grid;gap:12px">
+      <section class="card">
+        <h2>Estado on-chain (Mainnet RPC)</h2>
+        <ul class="kv">
+          <li><span>Red</span><b>Stellar Mainnet</b></li>
+          <li><span>Contrato 1 (Guard)</span><a class="mono" id="c1Link" target="_blank" rel="noopener" style="color:var(--hue);max-width:175px;text-align:right">—</a></li>
+          <li><span>Contrato 2 (Ops)</span><a class="mono" id="c2Link" target="_blank" rel="noopener" style="color:var(--hue);max-width:175px;text-align:right">—</a></li>
+          <li><span>Saldo Bóveda 1</span><b id="v1Bal">—</b></li>
+          <li><span>Saldo Bóveda 2</span><b id="v2Bal">—</b></li>
+          <li><span>Pagado hoy (Guard)</span><b id="vSpent">—</b></li>
+          <li><span>Freighter</span><span class="mono" id="wAddr">Lista</span></li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Transacciones en Mainnet</h2>
+        <ul class="txs" id="txList"><li style="color:var(--muted)">Cargando comprobantes…</li></ul>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+async function refreshState() {
+  const r = await fetch('/api/mainnet/state');
+  const d = await r.json();
+  const c1 = document.getElementById('c1Link');
+  c1.textContent = d.contract.slice(0, 7) + '…' + d.contract.slice(-5) + ' ↗';
+  c1.href = 'https://stellar.expert/explorer/public/contract/' + d.contract;
+  const c2 = document.getElementById('c2Link');
+  c2.textContent = d.ops_contract.slice(0, 7) + '…' + d.ops_contract.slice(-5) + ' ↗';
+  c2.href = 'https://stellar.expert/explorer/public/contract/' + d.ops_contract;
+  document.getElementById('v1Bal').textContent = d.vault_xlm.toFixed(4) + ' XLM';
+  document.getElementById('v2Bal').textContent = d.ops_vault_xlm.toFixed(4) + ' XLM';
+  document.getElementById('vSpent').textContent = d.spent_xlm.toFixed(4) + ' XLM';
+  if (d.next_suffix) {
+    document.getElementById('f2-folio').value = 'CFDI' + d.next_suffix;
+    document.getElementById('f3-folio').value = 'RET' + d.next_suffix;
+    document.getElementById('f4-period').value = 'QUIN' + d.next_suffix;
+  }
+  const ul = document.getElementById('txList');
+  if (!d.txs || !d.txs.length) {
+    ul.innerHTML = '<li style="color:var(--muted)">Sin ejecuciones registradas aún.</li>';
+  } else {
+    ul.innerHTML = d.txs.map(t => `
+      <li>
+        <span><b>${t.fn}</b> · ${t.detail || ''}</span>
+        <a href="https://stellar.expert/explorer/public/tx/${t.hash}" target="_blank" rel="noopener">${t.hash.slice(0,8)}…${t.hash.slice(-5)} ↗</a>
+      </li>
+    `).join('');
+  }
+}
+
+async function invokeMainnet(btnId, outId, endpoint, payload) {
+  const btn = document.getElementById(btnId);
+  const out = document.getElementById(outId);
+  btn.disabled = true;
+  out.hidden = false;
+  out.textContent = 'Firmando e invocando en Stellar Public Mainnet…';
+  try {
+    const r = await fetch(endpoint, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Fallo en Mainnet');
+    out.innerHTML = `✓ Confirmada en ${d.seconds}s · <a href="${d.explorer}" target="_blank" rel="noopener" style="color:var(--hue);font-family:var(--mono)">${d.hash.slice(0,12)}… ↗</a>`;
+    await refreshState();
+  } catch (e) {
+    out.textContent = '✕ ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btnFn1').onclick = () => invokeMainnet('btnFn1', 'out1', '/api/mainnet/set-supplier', {
+  supplier: document.getElementById('f1-sup').value.trim(),
+  max_xlm: parseFloat(document.getElementById('f1-max').value || '0.25')
+});
+document.getElementById('btnFn2').onclick = () => invokeMainnet('btnFn2', 'out2', '/api/mainnet/pay', {
+  folio: document.getElementById('f2-folio').value.trim(),
+  amount_xlm: parseFloat(document.getElementById('f2-amt').value || '0.02')
+});
+document.getElementById('btnFn3').onclick = () => invokeMainnet('btnFn3', 'out3', '/api/mainnet/pay-tax', {
+  folio: document.getElementById('f3-folio').value.trim(),
+  tax_bps: parseInt(document.getElementById('f3-bps').value || '1000', 10)
+});
+document.getElementById('btnFn4').onclick = () => invokeMainnet('btnFn4', 'out4', '/api/mainnet/payroll', {
+  period: document.getElementById('f4-period').value.trim(),
+  amount_xlm: parseFloat(document.getElementById('f4-amt').value || '0.01')
+});
+document.getElementById('btnFn5').onclick = () => invokeMainnet('btnFn5', 'out5', '/api/mainnet/sweep', {
+  dest: document.getElementById('f5-dest').value.trim(),
+  amount_xlm: parseFloat(document.getElementById('f5-amt').value || '0.02')
+});
+
+document.getElementById('btnFreighter').onclick = async () => {
+  try {
+    const api = window.freighterApi;
+    if (!api) { alert('Instala Freighter Wallet para firmar desde tu navegador.'); return; }
+    await api.setAllowed();
+    const pk = await api.getPublicKey();
+    document.getElementById('wAddr').textContent = pk ? (pk.slice(0,6) + '…' + pk.slice(-4)) : 'Conectada';
+  } catch (_) {}
+};
+
+refreshState();
+</script>
+</body>
+</html>

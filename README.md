@@ -1,6 +1,6 @@
 # TesorerIA
 
-**Demo pública en vivo:** [**https://tesoreria.lat**](https://tesoreria.lat) · Reto del Jurado: [`tesoreria.lat/reto`](https://tesoreria.lat/reto) · SEP-1: [`tesoreria.lat/.well-known/stellar.toml`](https://tesoreria.lat/.well-known/stellar.toml)
+**Demo pública en vivo:** [**https://tesoreria.lat**](https://tesoreria.lat) · **Stellar Mainnet en vivo:** [**tesoreria.lat/mainnet**](https://tesoreria.lat/mainnet) ([`docs/mainnet.md`](docs/mainnet.md)) · Reto del Jurado: [`tesoreria.lat/reto`](https://tesoreria.lat/reto) · SEP-1: [`tesoreria.lat/.well-known/stellar.toml`](https://tesoreria.lat/.well-known/stellar.toml)
 
 El candado antifraude de tus pagos: **la voz sugiere, el contrato manda, la factura respalda.**
 Tesorera digital por voz para PyMEs sobre **Stellar + Soroban** con validación de facturas SAT (CFDI), Path Payments atómicos (`MXNe → USDC`) y nómina en lote.

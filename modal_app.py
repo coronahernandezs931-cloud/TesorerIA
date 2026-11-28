@@ -19,7 +19,7 @@ image = (
 
 @app.function(
     image=image,
-    secrets=[modal.Secret.from_name("tesoreria-stellar"), modal.Secret.from_name("tesoreria-retell")],  # la segunda gana: cuenta de Retell con saldo
+    secrets=[modal.Secret.from_name("tesoreria-stellar"), modal.Secret.from_name("tesoreria-retell"), modal.Secret.from_name("tesoreria-mainnet")],  # la segunda gana: cuenta de Retell con saldo
     min_containers=1,  # sin arranque en frío durante el demo (latencia de voz)
     max_containers=1,  # un solo contenedor = secuencia de cuentas Stellar consistente
     scaledown_window=900,
