@@ -271,6 +271,123 @@ impl TreasuryStreams {
         env.events().publish((symbol_short!("finiquit"), st.worker), (stream_id, total_finiquito));
         total_finiquito
     }
+
+    // ---------- Módulo 2: Fianzas de Cumplimiento y Garantía de Obra ----------
+
+    pub fn stake_supplier_bond(
+        env: Env,
+        funder: Address,
+        supplier: Address,
+        bond_amount: i128,
+        order_ref: String,
+    ) -> BondRecord {
+        let c = cfg(&env);
+        funder.require_auth();
+        if bond_amount <= 0 {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        token::Client::new(&env, &c.token).transfer(&funder, &env.current_contract_address(), &bond_amount);
+        let id = next_id(&env);
+        let b = BondRecord { id, supplier: supplier.clone(), amount: bond_amount, order_ref, active: true };
+        save_p(&env, &DataKey::Bond(id), &b);
+        bump(&env);
+        env.events().publish((symbol_short!("bond_in"), supplier), (id, bond_amount));
+        b
+    }
+
+    pub fn release_supplier_bond(env: Env, bond_id: u64) -> BondRecord {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        let mut b: BondRecord = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Bond(bond_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if !b.active {
+            panic_with_error!(&env, StreamError::Inactive);
+        }
+        pay_out(&env, &c, &b.supplier, b.amount);
+        b.active = false;
+        save_p(&env, &DataKey::Bond(bond_id), &b);
+        bump(&env);
+        env.events().publish((symbol_short!("bond_ok"), b.supplier.clone()), (bond_id, b.amount));
+        b
+    }
+
+    pub fn slash_supplier_bond(
+        env: Env,
+        bond_id: u64,
+        penalty_bps: u32,
+        treasury_recovery: Address,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if penalty_bps == 0 || penalty_bps > 10_000 {
+            panic_with_error!(&env, StreamError::InvalidBps);
+        }
+        let mut b: BondRecord = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Bond(bond_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if !b.active {
+            panic_with_error!(&env, StreamError::Inactive);
+        }
+        let penalty = (b.amount * (penalty_bps as i128)) / 10_000;
+        let refund = b.amount - penalty;
+        if penalty > 0 {
+            pay_out(&env, &c, &treasury_recovery, penalty);
+        }
+        if refund > 0 {
+            pay_out(&env, &c, &b.supplier, refund);
+        }
+        b.active = false;
+        save_p(&env, &DataKey::Bond(bond_id), &b);
+        bump(&env);
+        env.events().publish((symbol_short!("bond_sl"), b.supplier), (bond_id, penalty));
+        penalty
+    }
+
+    pub fn pay_retention_warranty_holdback(
+        env: Env,
+        supplier: Address,
+        gross_work: i128,
+        holdback_bps: u32,
+    ) -> WarrantyHold {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if gross_work <= 0 || holdback_bps < 100 || holdback_bps > 3_000 {
+            panic_with_error!(&env, StreamError::InvalidBps);
+        }
+        let holdback = (gross_work * (holdback_bps as i128)) / 10_000;
+        let immediate = gross_work - holdback;
+        pay_out(&env, &c, &supplier, immediate);
+        let id = next_id(&env);
+        let w = WarrantyHold { id, supplier: supplier.clone(), holdback, active: true };
+        save_p(&env, &DataKey::Warranty(id), &w);
+        bump(&env);
+        env.events().publish((symbol_short!("warr_new"), supplier), (id, immediate, holdback));
+        w
+    }
+
+    pub fn claim_warranty_holdback(env: Env, warranty_id: u64) -> WarrantyHold {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        let mut w: WarrantyHold = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Warranty(warranty_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if !w.active {
+            panic_with_error!(&env, StreamError::Inactive);
+        }
+        pay_out(&env, &c, &w.supplier, w.holdback);
+        w.active = false;
+        save_p(&env, &DataKey::Warranty(warranty_id), &w);
+        bump(&env);
+        env.events().publish((symbol_short!("warr_ok"), w.supplier.clone()), (warranty_id, w.holdback));
+        w
+    }
     // __MODULES_ANCHOR__
 }
 
