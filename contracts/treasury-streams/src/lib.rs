@@ -164,6 +164,113 @@ impl TreasuryStreams {
         env.storage().instance().set(&DataKey::NextId, &1u64);
         bump(&env);
     }
+
+    // ---------- Módulo 1: Nómina Continua y Prestaciones LFT ----------
+
+    pub fn fund_payroll_pool(env: Env, funder: Address, amount: i128) -> i128 {
+        let c = cfg(&env);
+        funder.require_auth();
+        if amount <= 0 {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        let tk = token::Client::new(&env, &c.token);
+        tk.transfer(&funder, &env.current_contract_address(), &amount);
+        let pool: i128 = env.storage().instance().get(&DataKey::PayrollPool).unwrap_or(0) + amount;
+        env.storage().instance().set(&DataKey::PayrollPool, &pool);
+        bump(&env);
+        env.events().publish((symbol_short!("pool_in"), funder), amount);
+        pool
+    }
+
+    pub fn open_salary_stream(
+        env: Env,
+        worker: Address,
+        total_salary: i128,
+        signing_bonus: i128,
+    ) -> SalaryStream {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if total_salary <= 0 || signing_bonus <= 0 {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        pay_out(&env, &c, &worker, signing_bonus);
+        let id = next_id(&env);
+        let st = SalaryStream { id, worker: worker.clone(), remaining: total_salary, active: true };
+        save_p(&env, &DataKey::Stream(id), &st);
+        bump(&env);
+        env.events().publish((symbol_short!("sal_open"), worker), (id, total_salary, signing_bonus));
+        st
+    }
+
+    pub fn claim_accrued_salary(env: Env, stream_id: u64, payout_slice: i128) -> SalaryStream {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        let mut st: SalaryStream = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Stream(stream_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if !st.active || payout_slice <= 0 || payout_slice > st.remaining {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        pay_out(&env, &c, &st.worker, payout_slice);
+        st.remaining -= payout_slice;
+        if st.remaining == 0 {
+            st.active = false;
+        }
+        save_p(&env, &DataKey::Stream(stream_id), &st);
+        bump(&env);
+        env.events().publish((symbol_short!("sal_clm"), st.worker.clone()), (stream_id, payout_slice));
+        st
+    }
+
+    pub fn disburse_aguinaldo_bonus(
+        env: Env,
+        worker: Address,
+        monthly_salary: i128,
+        worked_days: u32,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if monthly_salary <= 0 || worked_days == 0 || worked_days > 365 {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        // LFT Art. 87: mínimo 15 días de salario diario proporcional a días trabajados
+        let daily = monthly_salary / 30;
+        let aguinaldo = (daily * 15 * (worked_days as i128)) / 365;
+        pay_out(&env, &c, &worker, aguinaldo);
+        bump(&env);
+        env.events().publish((symbol_short!("aguinal"), worker), aguinaldo);
+        aguinaldo
+    }
+
+    pub fn settle_severance_finiquito(
+        env: Env,
+        stream_id: u64,
+        indemnity_extra: i128,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if indemnity_extra < 0 {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        let mut st: SalaryStream = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Stream(stream_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if !st.active {
+            panic_with_error!(&env, StreamError::Inactive);
+        }
+        let total_finiquito = st.remaining + indemnity_extra;
+        pay_out(&env, &c, &st.worker, total_finiquito);
+        st.remaining = 0;
+        st.active = false;
+        save_p(&env, &DataKey::Stream(stream_id), &st);
+        bump(&env);
+        env.events().publish((symbol_short!("finiquit"), st.worker), (stream_id, total_finiquito));
+        total_finiquito
+    }
     // __MODULES_ANCHOR__
 }
 
