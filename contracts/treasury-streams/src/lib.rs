@@ -504,6 +504,112 @@ impl TreasuryStreams {
         env.events().publish((symbol_short!("sub_swp"), cold_reserve), (budget_id, swept));
         swept
     }
+
+    // ---------- Módulo 4: Tesorería Fiscal Mexicana (SAT, IMSS, PTU y Viáticos) ----------
+
+    pub fn provision_iva_isr_bucket(
+        env: Env,
+        tax_collector: Address,
+        sales_subtotal: i128,
+        iva_bps: u32,
+        isr_bps: u32,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if sales_subtotal <= 0 || iva_bps == 0 || iva_bps + isr_bps > 4_500 {
+            panic_with_error!(&env, StreamError::InvalidBps);
+        }
+        let total_tax = (sales_subtotal * ((iva_bps + isr_bps) as i128)) / 10_000;
+        pay_out(&env, &c, &tax_collector, total_tax);
+        bump(&env);
+        env.events().publish((symbol_short!("tax_prov"), tax_collector), total_tax);
+        total_tax
+    }
+
+    pub fn remit_imss_infonavit_quota(
+        env: Env,
+        social_vault: Address,
+        headcount: u32,
+        wage_mass: i128,
+        quota_bps: u32,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if headcount == 0 || wage_mass <= 0 || quota_bps < 500 || quota_bps > 3_500 {
+            panic_with_error!(&env, StreamError::InvalidBps);
+        }
+        let quota = (wage_mass * (quota_bps as i128)) / 10_000;
+        pay_out(&env, &c, &social_vault, quota);
+        bump(&env);
+        env.events().publish((symbol_short!("imss"), social_vault), (headcount, quota));
+        quota
+    }
+
+    pub fn distribute_ptu_profit_share(env: Env, workers: Vec<Address>, total_ptu: i128) -> i128 {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if workers.is_empty() {
+            panic_with_error!(&env, StreamError::EmptyList);
+        }
+        if total_ptu <= 0 {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        let per_worker = total_ptu / (workers.len() as i128);
+        if per_worker <= 0 {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        for w in workers.iter() {
+            pay_out(&env, &c, &w, per_worker);
+        }
+        bump(&env);
+        env.events().publish((symbol_short!("ptu_pay"),), (workers.len(), per_worker));
+        per_worker
+    }
+
+    pub fn issue_travel_viaticos(
+        env: Env,
+        employee: Address,
+        per_diem_rate: i128,
+        days: u32,
+    ) -> ViaticoTicket {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if per_diem_rate <= 0 || days == 0 || days > 30 {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        let disbursed = per_diem_rate * (days as i128);
+        pay_out(&env, &c, &employee, disbursed);
+        let id = next_id(&env);
+        let tk_rec = ViaticoTicket { id, employee: employee.clone(), disbursed, closed: false };
+        save_p(&env, &DataKey::Viatico(id), &tk_rec);
+        bump(&env);
+        env.events().publish((symbol_short!("viatico"), employee), (id, disbursed));
+        tk_rec
+    }
+
+    pub fn reconcile_viaticos_surplus(
+        env: Env,
+        payer: Address,
+        ticket_id: u64,
+        unspent_refund: i128,
+    ) -> ViaticoTicket {
+        let c = cfg(&env);
+        payer.require_auth();
+        let mut tk_rec: ViaticoTicket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Viatico(ticket_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if tk_rec.closed || unspent_refund <= 0 || unspent_refund >= tk_rec.disbursed {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        token::Client::new(&env, &c.token).transfer(&payer, &env.current_contract_address(), &unspent_refund);
+        tk_rec.closed = true;
+        save_p(&env, &DataKey::Viatico(ticket_id), &tk_rec);
+        bump(&env);
+        env.events().publish((symbol_short!("viat_ok"), payer), (ticket_id, unspent_refund));
+        tk_rec
+    }
     // __MODULES_ANCHOR__
 }
 
