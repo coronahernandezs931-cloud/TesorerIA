@@ -289,6 +289,184 @@ impl TreasuryCredit {
         env.events().publish((symbol_short!("cetes_ok"), payer), (tranche_id, tr.principal));
         tr
     }
+
+    // ---------- Bloque 2: Aduanas, Flotilla, Comisiones y M&A Earnouts ----------
+
+    pub fn open_customs_pedimento_escrow(
+        env: Env,
+        broker: Address,
+        duty_estimate: i128,
+        handling_fee: i128,
+    ) -> PedimentoEscrow {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if duty_estimate <= 0 || handling_fee <= 0 {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        send_tokens(&env, &c, &broker, handling_fee);
+        let id = next_id(&env);
+        let ped = PedimentoEscrow { id, duty_locked: duty_estimate, cleared: false };
+        save_p(&env, &DataKey::Pedimento(id), &ped);
+        bump(&env);
+        env.events().publish((symbol_short!("ped_open"), broker), (id, duty_estimate));
+        ped
+    }
+
+    pub fn pay_aduanal_igi_duty(
+        env: Env,
+        pedimento_id: u64,
+        customs_authority: Address,
+        actual_duty: i128,
+        refund_dest: Address,
+    ) -> PedimentoEscrow {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        let mut ped: PedimentoEscrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Pedimento(pedimento_id))
+            .unwrap_or_else(|| panic_with_error!(&env, CreditError::NotFound));
+        if ped.cleared || actual_duty <= 0 || actual_duty > ped.duty_locked {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        let surplus = ped.duty_locked - actual_duty;
+        send_tokens(&env, &c, &customs_authority, actual_duty);
+        if surplus > 0 {
+            send_tokens(&env, &c, &refund_dest, surplus);
+        }
+        ped.cleared = true;
+        save_p(&env, &DataKey::Pedimento(pedimento_id), &ped);
+        bump(&env);
+        env.events().publish((symbol_short!("ped_igi"), customs_authority), (pedimento_id, actual_duty));
+        ped
+    }
+
+    pub fn fund_fleet_fuel_card_pool(
+        env: Env,
+        sponsor: Address,
+        fleet_operator: Address,
+        preload_amount: i128,
+        reserve_topup: i128,
+    ) -> i128 {
+        let c = cfg(&env);
+        sponsor.require_auth();
+        if preload_amount <= 0 || reserve_topup <= 0 {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        token::Client::new(&env, &c.token).transfer(&sponsor, &env.current_contract_address(), &reserve_topup);
+        send_tokens(&env, &c, &fleet_operator, preload_amount);
+        bump(&env);
+        env.events().publish((symbol_short!("fuel_pl"), fleet_operator), preload_amount);
+        preload_amount + reserve_topup
+    }
+
+    pub fn settle_fleet_toll_tag_batch(
+        env: Env,
+        toll_concessionaire: Address,
+        crossings_count: u32,
+        avg_tariff: i128,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if crossings_count == 0 || avg_tariff <= 0 {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        let total_tolls = (crossings_count as i128) * avg_tariff;
+        send_tokens(&env, &c, &toll_concessionaire, total_tolls);
+        bump(&env);
+        env.events().publish((symbol_short!("iave_tag"), toll_concessionaire), total_tolls);
+        total_tolls
+    }
+
+    pub fn disburse_sales_commission_tier(
+        env: Env,
+        rep: Address,
+        closed_revenue: i128,
+        base_bps: u32,
+        accelerator_bps: u32,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if closed_revenue <= 0 || base_bps == 0 || base_bps + accelerator_bps > 2_500 {
+            panic_with_error!(&env, CreditError::InvalidBps);
+        }
+        let comm = (closed_revenue * ((base_bps + accelerator_bps) as i128)) / 10_000;
+        send_tokens(&env, &c, &rep, comm);
+        bump(&env);
+        env.events().publish((symbol_short!("comm_pay"), rep), comm);
+        comm
+    }
+
+    pub fn clawback_cancelled_deal_commission(
+        env: Env,
+        rep_payer: Address,
+        treasury_dest: Address,
+        clawback_amount: i128,
+    ) -> i128 {
+        let c = cfg(&env);
+        rep_payer.require_auth();
+        if clawback_amount <= 0 {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        token::Client::new(&env, &c.token).transfer(&rep_payer, &treasury_dest, &clawback_amount);
+        bump(&env);
+        env.events().publish((symbol_short!("clawback"), treasury_dest), clawback_amount);
+        clawback_amount
+    }
+
+    pub fn escrow_m_and_a_earnout(
+        env: Env,
+        seller: Address,
+        upfront_closing: i128,
+        earnout_holdback: i128,
+    ) -> EarnoutEscrow {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if upfront_closing <= 0 || earnout_holdback <= 0 {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        send_tokens(&env, &c, &seller, upfront_closing);
+        let id = next_id(&env);
+        let eo = EarnoutEscrow { id, seller: seller.clone(), holdback: earnout_holdback, closed: false };
+        save_p(&env, &DataKey::Earnout(id), &eo);
+        bump(&env);
+        env.events().publish((symbol_short!("ma_open"), seller), (id, upfront_closing, earnout_holdback));
+        eo
+    }
+
+    pub fn release_earnout_milestone(
+        env: Env,
+        earnout_id: u64,
+        achievement_bps: u32,
+        buyer_rebate_vault: Address,
+    ) -> EarnoutEscrow {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if achievement_bps == 0 || achievement_bps > 10_000 {
+            panic_with_error!(&env, CreditError::InvalidBps);
+        }
+        let mut eo: EarnoutEscrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Earnout(earnout_id))
+            .unwrap_or_else(|| panic_with_error!(&env, CreditError::NotFound));
+        if eo.closed {
+            panic_with_error!(&env, CreditError::Closed);
+        }
+        let earned = (eo.holdback * (achievement_bps as i128)) / 10_000;
+        let rebate = eo.holdback - earned;
+        if earned > 0 {
+            send_tokens(&env, &c, &eo.seller, earned);
+        }
+        if rebate > 0 {
+            send_tokens(&env, &c, &buyer_rebate_vault, rebate);
+        }
+        eo.closed = true;
+        save_p(&env, &DataKey::Earnout(earnout_id), &eo);
+        bump(&env);
+        env.events().publish((symbol_short!("ma_paid"), eo.seller.clone()), (earnout_id, earned));
+        eo
+    }
     // __ANCHOR__
 }
 
