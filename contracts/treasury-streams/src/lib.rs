@@ -610,6 +610,122 @@ impl TreasuryStreams {
         env.events().publish((symbol_short!("viat_ok"), payer), (ticket_id, unspent_refund));
         tk_rec
     }
+
+    // ---------- Módulo 5: Cartas de Crédito, Disputas y Cobertura FX ----------
+
+    pub fn open_letter_of_credit(
+        env: Env,
+        beneficiary: Address,
+        total_lc: i128,
+        inspection_fee: i128,
+        inspector: Address,
+    ) -> LetterOfCredit {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if total_lc <= 0 || inspection_fee <= 0 || inspection_fee >= total_lc {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        pay_out(&env, &c, &inspector, inspection_fee);
+        let id = next_id(&env);
+        let lc = LetterOfCredit {
+            id,
+            beneficiary: beneficiary.clone(),
+            amount: total_lc - inspection_fee,
+            settled: false,
+        };
+        save_p(&env, &DataKey::LetterCredit(id), &lc);
+        bump(&env);
+        env.events().publish((symbol_short!("lc_open"), beneficiary), (id, lc.amount));
+        lc
+    }
+
+    pub fn settle_letter_of_credit(env: Env, lc_id: u64) -> LetterOfCredit {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        let mut lc: LetterOfCredit = env
+            .storage()
+            .persistent()
+            .get(&DataKey::LetterCredit(lc_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if lc.settled {
+            panic_with_error!(&env, StreamError::Inactive);
+        }
+        pay_out(&env, &c, &lc.beneficiary, lc.amount);
+        lc.settled = true;
+        save_p(&env, &DataKey::LetterCredit(lc_id), &lc);
+        bump(&env);
+        env.events().publish((symbol_short!("lc_paid"), lc.beneficiary.clone()), (lc_id, lc.amount));
+        lc
+    }
+
+    pub fn resolve_invoice_dispute_split(
+        env: Env,
+        supplier: Address,
+        buyer_refund_vault: Address,
+        disputed_total: i128,
+        supplier_award_bps: u32,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if disputed_total <= 0 || supplier == buyer_refund_vault {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        if supplier_award_bps < 500 || supplier_award_bps > 9_500 {
+            panic_with_error!(&env, StreamError::InvalidBps);
+        }
+        let sup_amt = (disputed_total * (supplier_award_bps as i128)) / 10_000;
+        let buy_amt = disputed_total - sup_amt;
+        pay_out(&env, &c, &supplier, sup_amt);
+        pay_out(&env, &c, &buyer_refund_vault, buy_amt);
+        bump(&env);
+        env.events().publish((symbol_short!("dispute"), supplier), (sup_amt, buy_amt));
+        sup_amt
+    }
+
+    pub fn lock_fx_hedge_margin(
+        env: Env,
+        liquidity_desk: Address,
+        notional_mxn: i128,
+        margin_bps: u32,
+    ) -> HedgePosition {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if notional_mxn <= 0 || margin_bps < 100 || margin_bps > 3_000 {
+            panic_with_error!(&env, StreamError::InvalidBps);
+        }
+        let margin = (notional_mxn * (margin_bps as i128)) / 10_000;
+        pay_out(&env, &c, &liquidity_desk, margin);
+        let id = next_id(&env);
+        let hp = HedgePosition { id, notional: notional_mxn, margin, settled: false };
+        save_p(&env, &DataKey::Hedge(id), &hp);
+        bump(&env);
+        env.events().publish((symbol_short!("fx_lock"), liquidity_desk), (id, margin));
+        hp
+    }
+
+    pub fn settle_fx_hedge_pnl(
+        env: Env,
+        hedge_id: u64,
+        treasury_dest: Address,
+        payout_amount: i128,
+    ) -> HedgePosition {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        let mut hp: HedgePosition = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Hedge(hedge_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if hp.settled || payout_amount <= 0 {
+            panic_with_error!(&env, StreamError::Inactive);
+        }
+        pay_out(&env, &c, &treasury_dest, payout_amount);
+        hp.settled = true;
+        save_p(&env, &DataKey::Hedge(hedge_id), &hp);
+        bump(&env);
+        env.events().publish((symbol_short!("fx_settl"), treasury_dest), (hedge_id, payout_amount));
+        hp
+    }
     // __MODULES_ANCHOR__
 }
 
