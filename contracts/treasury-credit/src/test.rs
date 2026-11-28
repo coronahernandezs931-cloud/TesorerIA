@@ -73,7 +73,7 @@ fn test_fleet_sales_and_ma_earnout() {
     assert_eq!(c.credit.fund_fleet_fuel_card_pool(&c.payer, &c.party_a, &(15_000 * UNIT), &(5_000 * UNIT)), 20_000 * UNIT);
     assert_eq!(c.credit.settle_fleet_toll_tag_batch(&c.party_b, &40, &(120 * UNIT)), 4_800 * UNIT);
     assert_eq!(c.credit.disburse_sales_commission_tier(&c.party_a, &(100_000 * UNIT), &500, &200), 7_000 * UNIT);
-    assert_eq!(c.credit.clawback_cancelled_deal_commission(&c.payer, &c.vault_x, &(2_500 * UNIT)), 2_500 * UNIT);
+    assert_eq!(c.credit.clawback_sales_commission(&c.payer, &c.vault_x, &(2_500 * UNIT)), 2_500 * UNIT);
 
     let eo = c.credit.escrow_m_and_a_earnout(&c.party_a, &(60_000 * UNIT), &(40_000 * UNIT));
     assert!(c.credit.release_earnout_milestone(&eo.id, &7_500, &c.vault_x).closed);
@@ -89,7 +89,7 @@ fn test_governance_dividends_insurance_esg_cfe_royalties() {
     assert_eq!(c.credit.declare_shareholder_dividend(&dirs, &(50_000 * UNIT), &1_000, &c.vault_x), 22_500 * UNIT);
     assert_eq!(c.credit.execute_treasury_buyback(&c.party_a, &100, &(250 * UNIT)), 25_000 * UNIT);
     assert_eq!(c.credit.pay_insurance_policy_premium(&c.party_a, &(200_000 * UNIT), &150, &c.party_b, &25), 3_500 * UNIT);
-    assert_eq!(c.credit.settle_insurance_claim_deductible(&c.party_a, &(30_000 * UNIT), &(5_000 * UNIT)), 25_000 * UNIT);
+    assert_eq!(c.credit.settle_insurance_claim_net(&c.party_a, &(30_000 * UNIT), &(5_000 * UNIT)), 25_000 * UNIT);
     assert_eq!(c.credit.fund_carbon_offset_retirement(&c.vault_x, &120, &(180 * UNIT)), 21_600 * UNIT);
     assert_eq!(c.credit.disburse_union_savings_match(&c.vault_x, &(20_000 * UNIT), &5_000), 10_000 * UNIT);
     assert_eq!(c.credit.settle_utility_cfe_tariff_split(&c.party_b, &4_000, &6_000, &(3 * UNIT)), 30_000 * UNIT);

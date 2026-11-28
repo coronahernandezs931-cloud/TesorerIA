@@ -397,7 +397,7 @@ impl TreasuryCredit {
         comm
     }
 
-    pub fn clawback_cancelled_deal_commission(
+    pub fn clawback_sales_commission(
         env: Env,
         rep_payer: Address,
         treasury_dest: Address,
@@ -555,7 +555,7 @@ impl TreasuryCredit {
         net_prem + brok_fee
     }
 
-    pub fn settle_insurance_claim_deductible(
+    pub fn settle_insurance_claim_net(
         env: Env,
         claimant_unit: Address,
         gross_claim: i128,
