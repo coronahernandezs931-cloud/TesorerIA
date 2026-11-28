@@ -467,6 +467,189 @@ impl TreasuryCredit {
         env.events().publish((symbol_short!("ma_paid"), eo.seller.clone()), (earnout_id, earned));
         eo
     }
+
+    // ---------- Bloque 3: Gobierno Corporativo, Dividendos, Seguros, ESG, CFE y Regalías ----------
+
+    pub fn pay_board_retainer_stipend(env: Env, directors: Vec<Address>, stipend_each: i128) -> i128 {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if directors.is_empty() {
+            panic_with_error!(&env, CreditError::EmptyRecipients);
+        }
+        if stipend_each <= 0 {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        for d in directors.iter() {
+            send_tokens(&env, &c, &d, stipend_each);
+        }
+        let total = stipend_each * (directors.len() as i128);
+        bump(&env);
+        env.events().publish((symbol_short!("board_st"),), total);
+        total
+    }
+
+    pub fn declare_shareholder_dividend(
+        env: Env,
+        shareholders: Vec<Address>,
+        total_dividend: i128,
+        isr_dividend_bps: u32,
+        sat_vault: Address,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if shareholders.is_empty() {
+            panic_with_error!(&env, CreditError::EmptyRecipients);
+        }
+        if total_dividend <= 0 || isr_dividend_bps == 0 || isr_dividend_bps > 3_500 {
+            panic_with_error!(&env, CreditError::InvalidBps);
+        }
+        let isr_tax = (total_dividend * (isr_dividend_bps as i128)) / 10_000;
+        let net_pool = total_dividend - isr_tax;
+        let per_holder = net_pool / (shareholders.len() as i128);
+        send_tokens(&env, &c, &sat_vault, isr_tax);
+        for sh in shareholders.iter() {
+            send_tokens(&env, &c, &sh, per_holder);
+        }
+        bump(&env);
+        env.events().publish((symbol_short!("dividend"), sat_vault), (per_holder, isr_tax));
+        per_holder
+    }
+
+    pub fn execute_treasury_buyback(
+        env: Env,
+        tendered_holder: Address,
+        shares_retired: u32,
+        price_per_share: i128,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if shares_retired == 0 || price_per_share <= 0 {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        let consideration = (shares_retired as i128) * price_per_share;
+        send_tokens(&env, &c, &tendered_holder, consideration);
+        bump(&env);
+        env.events().publish((symbol_short!("buyback"), tendered_holder), consideration);
+        consideration
+    }
+
+    pub fn pay_insurance_policy_premium(
+        env: Env,
+        insurer: Address,
+        coverage_notional: i128,
+        rate_bps: u32,
+        broker: Address,
+        broker_bps: u32,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if coverage_notional <= 0 || rate_bps == 0 || broker_bps == 0 || rate_bps + broker_bps > 2_000 {
+            panic_with_error!(&env, CreditError::InvalidBps);
+        }
+        let net_prem = (coverage_notional * (rate_bps as i128)) / 10_000;
+        let brok_fee = (coverage_notional * (broker_bps as i128)) / 10_000;
+        send_tokens(&env, &c, &insurer, net_prem);
+        send_tokens(&env, &c, &broker, brok_fee);
+        bump(&env);
+        env.events().publish((symbol_short!("ins_prem"), insurer), net_prem + brok_fee);
+        net_prem + brok_fee
+    }
+
+    pub fn settle_insurance_claim_deductible(
+        env: Env,
+        claimant_unit: Address,
+        gross_claim: i128,
+        deductible_amount: i128,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if gross_claim <= 0 || deductible_amount < 0 || deductible_amount >= gross_claim {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        let payout = gross_claim - deductible_amount;
+        send_tokens(&env, &c, &claimant_unit, payout);
+        bump(&env);
+        env.events().publish((symbol_short!("ins_clm"), claimant_unit), payout);
+        payout
+    }
+
+    pub fn fund_carbon_offset_retirement(
+        env: Env,
+        registry_vault: Address,
+        tons_co2: u32,
+        price_per_ton: i128,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if tons_co2 == 0 || price_per_ton <= 0 {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        let cost = (tons_co2 as i128) * price_per_ton;
+        send_tokens(&env, &c, &registry_vault, cost);
+        bump(&env);
+        env.events().publish((symbol_short!("esg_co2"), registry_vault), (tons_co2, cost));
+        cost
+    }
+
+    pub fn disburse_union_savings_match(
+        env: Env,
+        savings_caja: Address,
+        employee_contrib: i128,
+        match_bps: u32,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if employee_contrib <= 0 || match_bps < 1_000 || match_bps > 10_000 {
+            panic_with_error!(&env, CreditError::InvalidBps);
+        }
+        let employer_match = (employee_contrib * (match_bps as i128)) / 10_000;
+        send_tokens(&env, &c, &savings_caja, employer_match);
+        bump(&env);
+        env.events().publish((symbol_short!("caja_sav"), savings_caja), employer_match);
+        employer_match
+    }
+
+    pub fn settle_utility_cfe_tariff_split(
+        env: Env,
+        utility_collector: Address,
+        plant_a_kwh: u32,
+        plant_b_kwh: u32,
+        rate_per_kwh: i128,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if plant_a_kwh + plant_b_kwh == 0 || rate_per_kwh <= 0 {
+            panic_with_error!(&env, CreditError::InvalidAmount);
+        }
+        let bill = ((plant_a_kwh + plant_b_kwh) as i128) * rate_per_kwh;
+        send_tokens(&env, &c, &utility_collector, bill);
+        bump(&env);
+        env.events().publish((symbol_short!("cfe_bill"), utility_collector), bill);
+        bill
+    }
+
+    pub fn pay_royalty_license_waterfall(
+        env: Env,
+        ip_licensor: Address,
+        local_partner: Address,
+        gross_sales: i128,
+        royalty_bps: u32,
+        partner_share_bps: u32,
+    ) -> i128 {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if gross_sales <= 0 || royalty_bps == 0 || royalty_bps > 3_000 || partner_share_bps == 0 || partner_share_bps >= 10_000 {
+            panic_with_error!(&env, CreditError::InvalidBps);
+        }
+        let total_royalty = (gross_sales * (royalty_bps as i128)) / 10_000;
+        let partner_cut = (total_royalty * (partner_share_bps as i128)) / 10_000;
+        let licensor_cut = total_royalty - partner_cut;
+        send_tokens(&env, &c, &ip_licensor, licensor_cut);
+        send_tokens(&env, &c, &local_partner, partner_cut);
+        bump(&env);
+        env.events().publish((symbol_short!("royalty"), ip_licensor), (licensor_cut, partner_cut));
+        total_royalty
+    }
     // __ANCHOR__
 }
 
