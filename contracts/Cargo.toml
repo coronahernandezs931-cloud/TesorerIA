@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["treasury-guard", "treasury-streams"]
+members = ["treasury-guard", "treasury-streams", "treasury-credit"]
 
 [workspace.dependencies]
 soroban-sdk = "29"
