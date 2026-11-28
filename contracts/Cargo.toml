@@ -1,11 +1,11 @@
-[workspace]
+[workspace, "treasury-settlement", "treasury-trade"]
 resolver = "2"
-members = ["treasury-guard", "treasury-streams", "treasury-credit", "treasury-mainnet", "treasury-mainnet-ops"]
+members = ["treasury-guard", "treasury-streams", "treasury-credit", "treasury-mainnet", "treasury-mainnet-ops", "treasury-settlement", "treasury-trade"]
 
-[workspace.dependencies]
+[workspace.dependencies, "treasury-settlement", "treasury-trade"]
 soroban-sdk = "29"
 
-[profile.release]
+[profile.release, "treasury-settlement", "treasury-trade"]
 opt-level = "z"
 overflow-checks = true
 debug = 0
