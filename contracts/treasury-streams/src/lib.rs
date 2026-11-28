@@ -388,6 +388,122 @@ impl TreasuryStreams {
         env.events().publish((symbol_short!("warr_ok"), w.supplier.clone()), (warranty_id, w.holdback));
         w
     }
+
+    // ---------- Módulo 3: Factoraje Confirming y Sub-Presupuestos ----------
+
+    pub fn advance_factoring_invoice(
+        env: Env,
+        supplier: Address,
+        factor_fund: Address,
+        invoice_face: i128,
+        fee_bps: u32,
+    ) -> FactoringRecord {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        if invoice_face <= 0 || supplier == factor_fund {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        if fee_bps < 25 || fee_bps > 1_500 {
+            panic_with_error!(&env, StreamError::InvalidBps);
+        }
+        let fee = (invoice_face * (fee_bps as i128)) / 10_000;
+        let advance = invoice_face - fee;
+        pay_out(&env, &c, &supplier, advance);
+        pay_out(&env, &c, &factor_fund, fee);
+        let id = next_id(&env);
+        let rec = FactoringRecord { id, supplier: supplier.clone(), face_amount: invoice_face, repaid: false };
+        save_p(&env, &DataKey::Factoring(id), &rec);
+        bump(&env);
+        env.events().publish((symbol_short!("fact_adv"), supplier), (id, advance, fee));
+        rec
+    }
+
+    pub fn repay_factoring_line(env: Env, payer: Address, factoring_id: u64) -> FactoringRecord {
+        let c = cfg(&env);
+        payer.require_auth();
+        let mut rec: FactoringRecord = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Factoring(factoring_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if rec.repaid {
+            panic_with_error!(&env, StreamError::Inactive);
+        }
+        token::Client::new(&env, &c.token).transfer(&payer, &env.current_contract_address(), &rec.face_amount);
+        rec.repaid = true;
+        save_p(&env, &DataKey::Factoring(factoring_id), &rec);
+        bump(&env);
+        env.events().publish((symbol_short!("fact_pay"), payer), (factoring_id, rec.face_amount));
+        rec
+    }
+
+    pub fn open_revolving_sub_budget(
+        env: Env,
+        department_head: Address,
+        cap_amount: i128,
+        initial_draw: i128,
+    ) -> SubBudget {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        if cap_amount <= 0 || initial_draw <= 0 || initial_draw >= cap_amount {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        pay_out(&env, &c, &department_head, initial_draw);
+        let id = next_id(&env);
+        let sb = SubBudget {
+            id,
+            head: department_head.clone(),
+            remaining: cap_amount - initial_draw,
+            active: true,
+        };
+        save_p(&env, &DataKey::Budget(id), &sb);
+        bump(&env);
+        env.events().publish((symbol_short!("sub_open"), department_head), (id, cap_amount));
+        sb
+    }
+
+    pub fn draw_sub_budget(env: Env, budget_id: u64, draw_amount: i128, vendor: Address) -> SubBudget {
+        let c = cfg(&env);
+        c.operator.require_auth();
+        let mut sb: SubBudget = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if !sb.active || draw_amount <= 0 || draw_amount > sb.remaining {
+            panic_with_error!(&env, StreamError::InvalidAmount);
+        }
+        pay_out(&env, &c, &vendor, draw_amount);
+        sb.remaining -= draw_amount;
+        if sb.remaining == 0 {
+            sb.active = false;
+        }
+        save_p(&env, &DataKey::Budget(budget_id), &sb);
+        bump(&env);
+        env.events().publish((symbol_short!("sub_draw"), vendor), (budget_id, draw_amount));
+        sb
+    }
+
+    pub fn sweep_unused_sub_budget(env: Env, budget_id: u64, cold_reserve: Address) -> i128 {
+        let c = cfg(&env);
+        c.admin.require_auth();
+        let mut sb: SubBudget = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, StreamError::NotFound));
+        if !sb.active || sb.remaining <= 0 {
+            panic_with_error!(&env, StreamError::Inactive);
+        }
+        let swept = sb.remaining;
+        pay_out(&env, &c, &cold_reserve, swept);
+        sb.remaining = 0;
+        sb.active = false;
+        save_p(&env, &DataKey::Budget(budget_id), &sb);
+        bump(&env);
+        env.events().publish((symbol_short!("sub_swp"), cold_reserve), (budget_id, swept));
+        swept
+    }
     // __MODULES_ANCHOR__
 }
 
